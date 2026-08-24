@@ -660,6 +660,8 @@ GrowHelper gateway          LIVE
 LLM                         gpt-5.5 / openai-codex
 Kanban config               READY
 GrowHelper plugin           INSTALLED + ENABLED
+Server Git checkout         /home/growhelper/src/grow-helper-team-in-hermes @ c99af00
+Plant onboarding/menu       DEPLOYED, Telegram E2E NOT YET TESTED
 Dashboard                   LIVE
 Dashboard public port       9119/tcp
 Dashboard auth              BASIC AUTH
@@ -668,3 +670,37 @@ Full Plant Cycle E2E        NOT YET TESTED
 ```
 
 Следующему агенту следует продолжать **с первого реального Plant/Campaign и полного Kanban E2E**, не переделывая уже работающий deployment layer.
+
+---
+
+## 21. Deploy Plant onboarding и Telegram menu — 2026-08-24
+
+Production обновлён из чистого server checkout:
+
+```text
+/home/growhelper/src/grow-helper-team-in-hermes
+commit c99af00
+```
+
+Перед deploy полный suite прошёл через Hermes Python 3.11: `30 tests OK` и
+JSON/YAML validation OK. Запущен штатный idempotent installer с
+`--skip-systemd-unit`; Plant data, credentials, sessions, Kanban boards и
+существующий Dashboard override сохранены. Перезапущены только:
+
+```text
+hermes-gateway-grow-helper.service
+growhelper-dashboard.service
+```
+
+После deploy:
+
+- `doctor.py`: `0 error(s)`;
+- оба сервиса: `active/running`, `ExecMainStatus=0`;
+- Dashboard smoke `http://127.0.0.1:9119/api/status`: OK;
+- свежие warning/error logs обоих сервисов: пусто;
+- installed GrowHelper SOUL, plugin и Telegram client совпадают с checkout;
+- Telegram Bot API `getMyCommands` возвращает ровно `addplant`, `plant`,
+  `compress`, `new`, `status`, `context`.
+
+Реальный Telegram `/addplant` → avatar → onboarding → `/plant` и полный Kanban
+Cycle остаются ручной E2E-проверкой оператора.
