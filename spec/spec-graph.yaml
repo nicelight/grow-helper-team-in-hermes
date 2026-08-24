@@ -1,0 +1,27 @@
+version: 1
+
+allowed_edges:
+  - schema -> schema
+  - api -> schema
+  - event -> schema
+  - policy -> api
+  - api -> errors
+
+nodes:
+  - type: intent
+    path: spec/intent.md
+  - type: scope
+    path: spec/l1-scope.md
+  - type: trace
+    path: spec/l1-trace.md
+  - type: schema
+    path: spec/schemas/plant-registry-core.schema.json
+  - type: schema
+    path: spec/schemas/activity-entry-core.schema.json
+  - type: errors
+    path: spec/errors/errors.yaml
+
+edges:
+  - from: spec/schemas/activity-entry-core.schema.json
+    to: spec/schemas/plant-registry-core.schema.json
+    type: references

@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://growhelper.local/spec/schemas/plant-registry-core.schema.json",
+  "title": "GrowHelper Plant registry",
+  "description": "Persistent plants/index.json contract. Plant uses plant_id as its domain identity; bindings use the containing platform:chat_id key as their business identity.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "updated_at", "plants", "bindings"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "plants": {
+      "type": "object",
+      "propertyNames": { "pattern": "^plt_[a-f0-9]{8,32}$" },
+      "additionalProperties": { "$ref": "#/$defs/plant" }
+    },
+    "bindings": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z0-9_-]+:.+$" },
+      "additionalProperties": { "$ref": "#/$defs/binding" }
+    }
+  },
+  "$defs": {
+    "plantId": {
+      "type": "string",
+      "pattern": "^plt_[a-f0-9]{8,32}$"
+    },
+    "plant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "plant_id",
+        "nickname",
+        "company",
+        "species",
+        "cultivar",
+        "owner_platform",
+        "telegram_chat_id",
+        "telegram_user_id",
+        "telegram_thread_id",
+        "board_slug",
+        "workspace_path",
+        "active_cycle_id",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "plant_id": { "$ref": "#/$defs/plantId" },
+        "nickname": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "company": { "type": "string", "maxLength": 200 },
+        "species": { "type": "string", "maxLength": 200 },
+        "cultivar": { "type": "string", "maxLength": 200 },
+        "owner_platform": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "telegram_chat_id": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "telegram_user_id": { "type": "string", "maxLength": 80 },
+        "telegram_thread_id": { "type": "string", "maxLength": 80 },
+        "board_slug": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+        },
+        "workspace_path": { "type": "string", "minLength": 1 },
+        "campaign_status": {
+          "type": "string",
+          "enum": ["onboarding", "active", "closed"]
+        },
+        "onboarding_stage": {
+          "type": "string",
+          "enum": ["awaiting_name", "collecting_campaign", "complete"]
+        },
+        "avatar_path": {
+          "oneOf": [
+            { "type": "null" },
+            { "const": "photos/avatar.jpg" }
+          ]
+        },
+        "active_cycle_id": { "type": ["string", "null"] },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform", "chat_id", "user_id", "updated_at"],
+      "properties": {
+        "platform": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "chat_id": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "user_id": { "type": "string", "maxLength": 80 },
+        "active_plant_id": { "$ref": "#/$defs/plantId" },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "pending_addplant": { "$ref": "#/$defs/pendingAddplant" }
+      }
+    },
+    "pendingAddplant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stage", "user_id", "requested_at", "command_message_id"],
+      "properties": {
+        "stage": { "const": "awaiting_avatar" },
+        "user_id": { "type": "string", "maxLength": 80 },
+        "requested_at": { "type": "string", "format": "date-time" },
+        "command_message_id": { "type": "string" }
+      }
+    }
+  },
+  "x-identity-field": "plants.*.plant_id",
+  "x-business-key": "normalized plants.*.nickname",
+  "x-owner-fields": [
+    "plants.*.owner_platform",
+    "plants.*.telegram_chat_id",
+    "plants.*.telegram_user_id"
+  ],
+  "x-compatibility": "backward",
+  "x-missing-field-defaults": {
+    "plants.*.campaign_status": "active",
+    "plants.*.onboarding_stage": "complete",
+    "plants.*.avatar_path": null
+  },
+  "x-idempotent": false,
+  "x-idempotency-note": "Registry mutations are serialized and atomic, but not all mutations are repeatable. Plant creation performs explicit nickname and allocated-ID conflict checks."
+}

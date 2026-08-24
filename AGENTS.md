@@ -96,11 +96,13 @@ Development may happen on the operator's local machine, directly on the server i
 Persistent work is complete only when represented in Git and pushed to GitHub.
 Use:
 1. `docs/BRIEF_v2.md` — normative product/architecture contract and acceptance criteria.
-2. `team.yaml` — canonical Profile roster, toolsets, Kanban and storage contract.
-3. `deploy_history.md` — current production topology, paths, services and runtime quirks.
-4. Relevant code and tests.
+2. `spec/README.md` — SDD index for L0 intent and L1 data, state and error contracts.
+3. `team.yaml` — canonical Profile roster, toolsets, Kanban and storage contract.
+4. `deploy_history.md` — current production topology, paths, services and runtime quirks.
+5. Relevant code and tests.
 When they disagree:
 - BRIEF describes intended architecture;
+- `spec/` makes the accepted domain contracts precise and must remain aligned with the BRIEF;
 - code/tests describe current implementation;
 - live server describes current runtime state;
 - GitHub is the canonical persistent project state.
@@ -112,6 +114,7 @@ When they disagree:
 - `profiles/` — SOUL/config overlays for seven Profiles.
 - `templates/` — Plant workspace templates.
 - `schemas/` — structured handoff/data schemas.
+- `spec/` — L0-L1 SDD intent, domain schemas, errors and dependency graph.
 - `scripts/install-team.py` — idempotent installer/updater.
 - `scripts/new-plant.py` — deterministic Plant creation.
 - `scripts/doctor.py` — deployment diagnostics.

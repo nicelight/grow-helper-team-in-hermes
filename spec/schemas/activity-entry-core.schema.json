@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://growhelper.local/spec/schemas/activity-entry-core.schema.json",
+  "title": "GrowHelper activity entry",
+  "description": "One append-only public dialogue or delivery record in a Plant activity.jsonl file.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "timestamp",
+    "plant_id",
+    "kind",
+    "cycle_id",
+    "session_id",
+    "message_id",
+    "text",
+    "media",
+    "delivery",
+    "phase"
+  ],
+  "properties": {
+    "timestamp": { "type": "string", "format": "date-time" },
+    "plant_id": {
+      "type": "string",
+      "pattern": "^plt_[a-f0-9]{8,32}$"
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["operator_message", "growhelper_reply", "admin_recommendation"]
+    },
+    "cycle_id": { "type": ["string", "null"] },
+    "session_id": { "type": "string" },
+    "message_id": { "type": "string" },
+    "text": { "type": "string", "maxLength": 100000 },
+    "media": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "delivery": {
+      "type": "string",
+      "enum": ["received", "unknown", "sent", "failed", "uncertain"]
+    },
+    "phase": {
+      "type": "string",
+      "enum": [
+        "direct",
+        "immediate",
+        "command",
+        "queued_for_recovery",
+        "cycle_update",
+        "cycle_input",
+        "final",
+        "admin"
+      ]
+    },
+    "event_type": {
+      "type": "string",
+      "enum": ["photo", "measurement", "text_symptom", "outcome", "general"]
+    },
+    "idempotency_key": { "type": "string" },
+    "error": { "type": "string" },
+    "reconciliation": { "type": "string" },
+    "reconciled_from_timestamp": { "type": "string", "format": "date-time" }
+  },
+  "x-identity": "Append-only entries intentionally have no synthetic ID; correlation uses plant_id plus timestamp and available message, session, Cycle or idempotency fields.",
+  "x-created-at-field": "timestamp",
+  "x-owner-field": "plant_id",
+  "x-business-key": "kind plus transport/workflow correlation fields",
+  "x-compatibility": "backward",
+  "x-idempotent": false,
+  "x-idempotency-note": "Appending repeats the record. Final-publication and admin-message callers enforce their own workflow idempotency before append."
+}

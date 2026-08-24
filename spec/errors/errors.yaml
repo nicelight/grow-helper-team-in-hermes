@@ -1,0 +1,60 @@
+version: 1
+description: >-
+  Stable machine-readable errors returned by GrowHelper workflow tools. Free-text
+  validation and unexpected exception messages are diagnostic detail, not stable
+  error codes.
+
+errors:
+  active_cycle_needs_recovery:
+    surface: growhelper_start_cycle
+    meaning: The Plant references a finished, missing or unavailable Cycle without confirmed final publication.
+    retryable: false
+    operator_action: Inspect and reconcile the existing Cycle before accepting another one.
+
+  delivery_uncertain:
+    surface: Telegram publication
+    meaning: Telegram may have accepted the message although the client did not receive a definitive response.
+    retryable: false
+    operator_action: Check the chat and use delivery reconciliation; never retry automatically.
+
+  telegram_rejected:
+    surface: Telegram publication
+    meaning: Telegram definitively rejected the send request.
+    retryable: true
+    operator_action: Correct the request or transport condition before retrying.
+
+  publication_requires_dispatcher_owned_growhelper_worker:
+    surface: growhelper_publish_reply
+    meaning: Final publication was called outside a dispatcher-owned grow-helper worker.
+    retryable: false
+    operator_action: Run publication only from the generated final worker task.
+
+  publication_requires_board_pinned_worker:
+    surface: growhelper_publish_reply
+    meaning: The publishing worker has no explicit Hermes Kanban board binding.
+    retryable: false
+    operator_action: Repair the worker context; do not guess a board.
+
+  cross_board_publication_refused:
+    surface: growhelper_publish_reply
+    meaning: The worker board does not match the Plant board.
+    retryable: false
+    operator_action: Stop publication and inspect Plant/Cycle routing.
+
+  publication_cycle_validation_failed:
+    surface: growhelper_publish_reply
+    meaning: Hermes Cycle state could not be read to validate the final worker.
+    retryable: true
+    operator_action: Restore Kanban access, then retry validation.
+
+  publication_requires_final_task_marker:
+    surface: growhelper_publish_reply
+    meaning: The current worker is not the marked descendant final task.
+    retryable: false
+    operator_action: Publish from the dispatcher-created final task only.
+
+  cycle_mismatch:
+    surface: growhelper_publish_reply
+    meaning: The requested Cycle is not the Plant's current active Cycle.
+    retryable: false
+    operator_action: Inspect Plant registry and Kanban state before any publication.
