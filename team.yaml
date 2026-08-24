@@ -1,0 +1,60 @@
+name: grow-helper-team
+version: "0.1.0"
+description: Hermes-native multi-profile assistant for long-running Plant campaigns.
+minimum_python: "3.11"
+architecture: "Hermes Profiles + one plugin + one Kanban board and filesystem workspace per Plant"
+profiles:
+  grow-helper:
+    description: Coordinates Plant campaigns, builds minimal Kanban workflows, synthesizes and publishes replies.
+    toolsets: [file, web, clarify, kanban, growhelper]
+    memory_enabled: false
+  vision-observation:
+    description: Reports observable visual facts without diagnoses.
+    toolsets: [file, vision, delegation]
+    memory_enabled: false
+    filesystem: read-only Plant workspace
+  plant-state:
+    description: Normalizes current condition, changes and non-causal trends.
+    toolsets: [file, web, delegation]
+    memory_enabled: false
+    filesystem: read-only Plant workspace
+  cultivation-advisor:
+    description: Produces causal hypotheses and reversible agronomic recommendations.
+    toolsets: [file, web, delegation]
+    memory_enabled: false
+    filesystem: read-only Plant workspace
+  task-followup:
+    description: Turns complex conclusions into checks, measurements and deadlines.
+    toolsets: [file]
+    memory_enabled: false
+    filesystem: read-only Plant workspace
+  data-curator:
+    description: Maintains candidate and validated reusable evidence in dataset/.
+    toolsets: [file]
+    memory_enabled: false
+    filesystem: write only Plant dataset/
+  reviewer:
+    description: Independently checks contradictions, unsupported claims and risky recommendations.
+    toolsets: [file, web, delegation]
+    memory_enabled: false
+    filesystem: read-only Plant workspace
+plugin:
+  name: grow-helper-monitor
+  toolset: growhelper
+  tools: [growhelper_plants, growhelper_start_cycle, growhelper_publish_reply]
+  hooks: [pre_tool_call, pre_llm_call, post_llm_call]
+storage:
+  default_root: ~/grow-helper
+  registry: plants/index.json
+  one_board_per_plant: true
+  canonical_files: [campaign.md, baseline.md, current-state.md, history-summary.md, activity.jsonl]
+kanban:
+  dispatch_in_gateway: true
+  auto_decompose: false
+  auto_subscribe_on_create: false
+  orchestrator_profile: grow-helper
+  one_active_cycle_per_plant: true
+dashboard:
+  plugin_tab: /grow-helper
+  source_of_execution_truth: Hermes Kanban DB
+  source_of_user_conversation_truth: Plant activity.jsonl

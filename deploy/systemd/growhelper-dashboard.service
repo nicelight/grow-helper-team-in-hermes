@@ -1,0 +1,27 @@
+[Unit]
+Description=GrowHelper administrative dashboard (Hermes Web Dashboard)
+Documentation=https://hermes-agent.nousresearch.com/docs/user-guide/features/web-dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+UMask=0077
+Environment=HOME=%h
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=GROWHELPER_DATA_ROOT=@DATA_ROOT@
+EnvironmentFile=-%h/.hermes/.env
+EnvironmentFile=-%h/.hermes/profiles/grow-helper/.env
+EnvironmentFile=-%h/.config/growhelper/dashboard.env
+ExecStart=@HERMES_BIN@ dashboard --host @DASHBOARD_HOST@ --port @DASHBOARD_PORT@ --no-open
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=%h/.hermes @DATA_ROOT@ -%h/.cache -%h/.local/share
+
+[Install]
+WantedBy=default.target

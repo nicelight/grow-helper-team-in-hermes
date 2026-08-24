@@ -1,0 +1,14 @@
+{
+  "name": "grow-helper-monitor",
+  "label": "GrowHelper",
+  "description": "Plant campaigns, conversation, evidence and agent workflow",
+  "icon": "Activity",
+  "version": "0.1.0",
+  "tab": {
+    "path": "/grow-helper",
+    "position": "after:kanban"
+  },
+  "entry": "dist/index.js",
+  "css": "dist/style.css",
+  "api": "plugin_api.py"
+}

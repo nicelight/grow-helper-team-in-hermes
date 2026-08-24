@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://growhelper.local/schemas/specialist-handoff.schema.json",
+  "title": "GrowHelper specialist handoff",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "round_id",
+    "verdict",
+    "observation",
+    "inference",
+    "recommendation",
+    "confidence",
+    "missing_data"
+  ],
+  "properties": {
+    "schema_version": { "const": "growhelper.v1" },
+    "round_id": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "verdict": { "enum": ["comment", "no_comments", "needs_data"] },
+    "confidence": { "$ref": "#/$defs/confidence" },
+    "missing_data": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "observation": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/observation" }
+    },
+    "inference": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/inference" }
+    },
+    "recommendation": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/recommendation" }
+    }
+  },
+  "$defs": {
+    "confidence": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "stringList": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "text", "source", "timestamp", "confidence", "missing_data"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "text": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "timestamp": { "type": "string", "minLength": 1 },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "missing_data": { "$ref": "#/$defs/stringList" },
+        "value": { "type": ["number", "string", "null"] },
+        "unit": { "type": ["string", "null"] },
+        "instrument": { "type": ["string", "null"] }
+      }
+    },
+    "inference": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "text", "confidence", "evidence_for", "evidence_against", "missing_data"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "text": { "type": "string", "minLength": 1 },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "evidence_for": { "$ref": "#/$defs/stringList" },
+        "evidence_against": { "$ref": "#/$defs/stringList" },
+        "missing_data": { "$ref": "#/$defs/stringList" }
+      }
+    },
+    "recommendation": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "text", "based_on", "urgency", "reversibility", "confidence"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "text": { "type": "string", "minLength": 1 },
+        "based_on": { "$ref": "#/$defs/stringList" },
+        "urgency": { "enum": ["now", "soon", "routine", "none"] },
+        "reversibility": { "enum": ["easy", "moderate", "hard", "unknown"] },
+        "confidence": { "$ref": "#/$defs/confidence" }
+      }
+    }
+  }
+}

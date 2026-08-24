@@ -1,0 +1,25 @@
+# Mount/copy this file into the directory watched by Traefik's file provider.
+# The Traefik container must resolve host.docker.internal to the Docker host:
+#
+# services:
+#   traefik:
+#     extra_hosts:
+#       - "host.docker.internal:host-gateway"
+#
+# Replace the hostname and TLS resolver to match the existing installation.
+http:
+  routers:
+    growhelper-dashboard:
+      rule: "Host(`growhelper.example.com`)"
+      entryPoints:
+        - websecure
+      service: growhelper-dashboard
+      tls:
+        certResolver: letsencrypt
+
+  services:
+    growhelper-dashboard:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:9119"
+        passHostHeader: true

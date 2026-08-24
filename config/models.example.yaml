@@ -1,0 +1,10 @@
+# Recommendations only. Configure actual providers/models with Hermes setup,
+# the model picker, or the Web Dashboard. Keep credentials out of this file.
+profiles:
+  grow-helper: {capability: strong reasoning and reliable tool use}
+  vision-observation: {capability: image input and precise visual description}
+  plant-state: {capability: inexpensive structured reasoning}
+  cultivation-advisor: {capability: strong agronomic reasoning}
+  task-followup: {capability: inexpensive structured planning}
+  data-curator: {capability: inexpensive extraction and classification}
+  reviewer: {capability: strong independent reasoning}
