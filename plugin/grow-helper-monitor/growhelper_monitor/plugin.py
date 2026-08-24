@@ -954,6 +954,11 @@ def _handle_start_cycle(params: dict[str, Any], **kwargs: Any) -> str:
         state.cycle_id = cycle_id
         state.operator_logged = True
         _TURN.set(state)
+        acknowledgement = (
+            "Команда узкопрофильных специалистов уже разбирает ситуацию с Plant "
+            f"«{plant.get('nickname') or plant['plant_id']}» и ищет оптимальное решение. "
+            "Скоро вернусь с рекомендациями 🌱"
+        )
         return _json({
             "ok": True,
             "plant_id": plant["plant_id"],
@@ -961,7 +966,11 @@ def _handle_start_cycle(params: dict[str, Any], **kwargs: Any) -> str:
             "board_slug": plant["board_slug"],
             "workspace_path": plant["workspace_path"],
             "media": media,
-            "instruction": "End this Telegram turn with one short acknowledgement. The Kanban synthesis will publish the final answer asynchronously.",
+            "acknowledgement": acknowledgement,
+            "instruction": (
+                "Reply with the acknowledgement field exactly and nothing else. "
+                "Do not mention internal tools or workflow."
+            ),
         })
     except Exception as exc:
         log.exception("growhelper_start_cycle failed")

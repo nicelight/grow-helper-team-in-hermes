@@ -50,6 +50,12 @@ class PluginTests(unittest.TestCase):
             second = json.loads(plugin._handle_start_cycle({"event_type": "measurement"}))
         self.assertTrue(first["ok"])
         self.assertTrue(second["duplicate"])
+        self.assertEqual(
+            first["acknowledgement"],
+            "Команда узкопрофильных специалистов уже разбирает ситуацию с Plant "
+            "«Милок» и ищет оптимальное решение. Скоро вернусь с рекомендациями 🌱",
+        )
+        self.assertNotIn("acknowledgement", second)
         create.assert_called_once()
         self.assertEqual(core.get_plant(self.plant["plant_id"])["active_cycle_id"], "t_cycle")
 

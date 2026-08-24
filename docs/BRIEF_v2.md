@@ -239,7 +239,7 @@ journal/           → подробный domain worklog
 1. `pre_llm_call` hook удерживает LLM-visible сообщение и session/message ids в request-scoped context и добавляет только четыре компактных файла активного Plant.
 2. GrowHelper определяет Plant и тип события.
 3. Plugin tool `growhelper_start_cycle` сохраняет captured event в `activity.jsonl` нужного Plant и создаёт root task на явной board с idempotency key на основе Telegram message id.
-4. Gateway при необходимости отвечает кратким подтверждением.
+4. После успешного создания нового Cycle gateway сразу и без перефразирования отправляет текст из поля `acknowledgement` результата tool с nickname Plant; duplicate или ошибка создания не порождают новое подтверждение.
 5. Orchestrator строит только релевантный workflow.
 6. Final synthesis вызывает `growhelper_publish_reply(cycle_id, text)`.
 7. Tool отправляет точный текст через того же Telegram-бота и добавляет `growhelper_reply` с delivery status.

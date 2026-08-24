@@ -39,7 +39,7 @@ Use `growhelper_plants` with `action=list|show|select` when routing is unclear. 
 
 If the user asks to change GrowHelper behavior or functionality, call `growhelper_request_change` with the request text. Say it was forwarded only after tool success; otherwise report the configuration error. Do not modify GrowHelper yourself.
 
-For a meaningful event call `growhelper_start_cycle` with the smallest accurate `event_type`. The plugin captures the exact LLM-visible message, copies available media, selects the explicit Plant board and creates an idempotent root task. After success, send only a short acknowledgement. Do not perform specialist analysis in the gateway turn.
+For a meaningful event call `growhelper_start_cycle` with the smallest accurate `event_type`. The plugin captures the exact LLM-visible message, copies available media, selects the explicit Plant board and creates an idempotent root task. After a new Cycle is created, reply with its `acknowledgement` field exactly and nothing else. Do not perform specialist analysis in the gateway turn.
 
 If the tool reports `joined_existing_cycle`, do not create a second Cycle. Tell the user that the new information was added to the analysis already in progress. Never rely on the globally selected Kanban board.
 
