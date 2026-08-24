@@ -327,3 +327,4 @@ Prefer checking whether a credential exists rather than printing its value.
 Update `deploy_history.md` when production meaningfully changes: topology, paths, services, model/provider setup, persistent runtime config, deployment procedure, or an important operational workaround.
 Do not update it for every ordinary code edit.
 Update `docs/BRIEF_v2.md` only when the intended architecture/product contract changes.
+As the project evolves, update existing key specifications in `spec/` and add new ones only for new important persistent or shared contracts.
