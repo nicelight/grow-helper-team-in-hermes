@@ -16,12 +16,16 @@ class FakeContext:
     def __init__(self) -> None:
         self.tools = {}
         self.hooks = {}
+        self.commands = {}
 
     def register_tool(self, *, name, toolset, schema, handler, **kwargs):
         self.tools[name] = {"toolset": toolset, "schema": schema, "handler": handler}
 
     def register_hook(self, name, callback):
         self.hooks[name] = callback
+
+    def register_command(self, name, handler, description="", **kwargs):
+        self.commands[name] = {"handler": handler, "description": description, **kwargs}
 
 
 class RegistrationTests(unittest.TestCase):
@@ -30,9 +34,16 @@ class RegistrationTests(unittest.TestCase):
         register(ctx)
         self.assertEqual(
             set(ctx.tools),
-            {"growhelper_plants", "growhelper_start_cycle", "growhelper_publish_reply"},
+            {
+                "growhelper_plants", "growhelper_start_cycle",
+                "growhelper_publish_reply", "growhelper_request_change",
+            },
         )
-        self.assertEqual(set(ctx.hooks), {"pre_tool_call", "pre_llm_call", "post_llm_call"})
+        self.assertEqual(
+            set(ctx.hooks),
+            {"pre_tool_call", "pre_gateway_dispatch", "pre_llm_call", "post_llm_call"},
+        )
+        self.assertEqual(set(ctx.commands), {"addplant", "plant"})
         self.assertTrue(all(tool["toolset"] == "growhelper" for tool in ctx.tools.values()))
 
 

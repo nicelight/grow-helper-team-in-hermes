@@ -48,6 +48,7 @@ MESSAGING_SECRET_PREFIXES = (
     "TELEGRAM_", "DISCORD_", "SLACK_", "WHATSAPP_", "SIGNAL_", "MATRIX_",
     "FEISHU_", "DINGTALK_", "WECOM_", "WEIXIN_", "QQ_",
 )
+TELEGRAM_USER_COMMANDS = ["addplant", "plant", "compress", "new", "status", "context"]
 
 
 class Installer:
@@ -244,23 +245,41 @@ class Installer:
             gateway = config.setdefault("gateway", {})
             if isinstance(gateway, dict):
                 gateway.setdefault("systemd_watchdog_seconds", 120)
+                platforms = gateway.setdefault("platforms", {})
+                if not isinstance(platforms, dict):
+                    platforms = {}
+                    gateway["platforms"] = platforms
+                telegram = platforms.setdefault("telegram", {})
+                if not isinstance(telegram, dict):
+                    telegram = {}
+                    platforms["telegram"] = telegram
+                extra = telegram.setdefault("extra", {})
+                if not isinstance(extra, dict):
+                    extra = {}
+                    telegram["extra"] = extra
+                extra["user_allowed_commands"] = list(TELEGRAM_USER_COMMANDS)
                 if self.telegram_admin_users:
-                    platforms = gateway.setdefault("platforms", {})
-                    if not isinstance(platforms, dict):
-                        platforms = {}
-                        gateway["platforms"] = platforms
-                    telegram = platforms.setdefault("telegram", {})
-                    if not isinstance(telegram, dict):
-                        telegram = {}
-                        platforms["telegram"] = telegram
-                    extra = telegram.setdefault("extra", {})
-                    if not isinstance(extra, dict):
-                        extra = {}
-                        telegram["extra"] = extra
                     extra["allow_admin_from"] = list(self.telegram_admin_users)
-                    # Hermes always permits /help and /whoami. Keep every other
-                    # command away from regular users during the first pilot.
-                    extra["user_allowed_commands"] = []
+            # Hermes builds the global Telegram menu from the top-level
+            # platform configuration. A six-item cap plus replace priority
+            # exposes exactly the GrowHelper contract without patching core.
+            platforms = config.setdefault("platforms", {})
+            if not isinstance(platforms, dict):
+                platforms = {}
+                config["platforms"] = platforms
+            telegram = platforms.setdefault("telegram", {})
+            if not isinstance(telegram, dict):
+                telegram = {}
+                platforms["telegram"] = telegram
+            extra = telegram.setdefault("extra", {})
+            if not isinstance(extra, dict):
+                extra = {}
+                telegram["extra"] = extra
+            extra["command_menu"] = {
+                "max_commands": len(TELEGRAM_USER_COMMANDS),
+                "priority_mode": "replace",
+                "priority": list(TELEGRAM_USER_COMMANDS),
+            }
             display = config.setdefault("display", {})
             if not isinstance(display, dict):
                 display = {}

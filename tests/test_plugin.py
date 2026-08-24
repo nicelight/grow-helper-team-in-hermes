@@ -6,7 +6,10 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
+
+from PIL import Image
 
 REPO = Path(__file__).resolve().parents[1]
 PLUGIN = REPO / "plugin" / "grow-helper-monitor"
@@ -36,6 +39,7 @@ class PluginTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         plugin._TURN.set(None)
+        plugin._INBOUND.set(None)
         os.environ.clear()
         os.environ.update(self.old_env)
         self.tmp.cleanup()
@@ -57,26 +61,82 @@ class PluginTests(unittest.TestCase):
         body = create.call_args.kwargs["body"]
         self.assertIn('"event_type": "photo"', body)
 
-    def test_plant_create_requires_explicit_confirmation(self) -> None:
-        rejected = json.loads(plugin._handle_plants({
-            "action": "create",
-            "nickname": "Новый",
-            "campaign_markdown": "# Campaign\nConfirmed",
-            "baseline_markdown": "# Baseline\nStatus: partial",
-        }))
-        self.assertFalse(rejected["ok"])
-        self.assertIn("confirmed=true", rejected["error"])
+    def test_addplant_photo_creates_onboarding_plant_and_small_avatar(self) -> None:
+        source = Path(self.tmp.name) / "large-avatar.bmp"
+        Image.new("RGB", (1400, 1400), (36, 120, 52)).save(source)
+        core.set_pending_addplant(
+            platform="telegram", chat_id="100", user_id="100", command_message_id="70",
+        )
+        inbound = plugin.TurnState(
+            platform="telegram", user_id="100", chat_id="100", message_id="71",
+            user_message="Фото для аватарки", media_paths=[str(source)],
+        )
+        plugin._INBOUND.set(inbound)
+        with patch.object(plugin.hermes, "create_board", return_value={}) as create_board, \
+             patch.object(plugin.telegram, "send_text", return_value={"message_id": "501"}):
+            self.assertIsNone(plugin._handle_addplant_sync("__avatar__"))
 
-        with patch.object(plugin.hermes, "create_board", return_value={}):
-            accepted = json.loads(plugin._handle_plants({
-                "action": "create",
-                "nickname": "Новый",
-                "campaign_markdown": "# Campaign\nConfirmed",
-                "baseline_markdown": "# Baseline\nStatus: partial",
-                "confirmed": True,
-            }))
-        self.assertTrue(accepted["ok"])
-        self.assertEqual(accepted["created"]["nickname"], "Новый")
+        created = core.resolve_plant(platform="telegram", chat_id="100", user_id="100")
+        self.assertNotEqual(created["plant_id"], self.plant["plant_id"])
+        self.assertEqual(created["campaign_status"], "onboarding")
+        self.assertEqual(created["onboarding_stage"], "awaiting_name")
+        avatar = Path(created["workspace_path"]) / created["avatar_path"]
+        self.assertLessEqual(avatar.stat().st_size, 500_000)
+        self.assertEqual(avatar.name, "avatar.jpg")
+        create_board.assert_called_once()
+
+        plugin._INBOUND.set(plugin.TurnState(
+            platform="telegram", user_id="100", chat_id="100", message_id="72",
+            user_message="Зелёный угол",
+        ))
+        context = plugin._pre_llm_call(
+            platform="telegram", sender_id="100", user_message="Зелёный угол",
+            session_id="s1", turn_id="name-turn",
+        )
+        self.assertIn("первое обычное сообщение", context["context"])
+        self.assertEqual(
+            core.get_plant(created["plant_id"])["onboarding_stage"],
+            "collecting_campaign",
+        )
+        renamed = json.loads(plugin._handle_plants({"action": "rename", "nickname": "Зелёный угол"}))
+        self.assertTrue(renamed["ok"])
+        activated = json.loads(plugin._handle_plants({
+            "action": "activate", "confirmed": True,
+            "campaign_markdown": "# Campaign\nPlant ID: pending\nNickname: pending\nStatus: onboarding",
+            "baseline_markdown": "# Baseline\nPlant ID: pending\nStatus: partial",
+        }))
+        self.assertEqual(activated["activated"]["campaign_status"], "active")
+
+    def test_plant_button_rewrites_and_selects_with_avatar(self) -> None:
+        source = Path(self.tmp.name) / "avatar.png"
+        Image.new("RGB", (64, 64), (20, 140, 60)).save(source)
+        second = core.create_plant(
+            nickname="Окно", owner_platform="telegram", owner_chat_id="100",
+            owner_user_id="100", avatar_jpeg=core.compress_avatar(source),
+            board_creator=lambda **kwargs: None,
+        )
+        source_info = SimpleNamespace(
+            platform=SimpleNamespace(value="telegram"), chat_id="100",
+            thread_id="", user_id="100",
+        )
+        event = SimpleNamespace(
+            source=source_info, user_id="100", message_id="80",
+            text="🌱 Окно", media_urls=[],
+        )
+        decision = plugin._pre_gateway_dispatch(event=event)
+        self.assertEqual(decision, {"action": "rewrite", "text": f"/plant {second['plant_id']}"})
+        with patch.object(plugin.telegram, "send_photo", return_value={"message_id": "502"}) as send:
+            self.assertIsNone(plugin._handle_plant_sync(second["plant_id"]))
+        active = core.resolve_plant(platform="telegram", chat_id="100", user_id="100")
+        self.assertEqual(active["plant_id"], second["plant_id"])
+        send.assert_called_once()
+
+    def test_change_request_uses_first_configured_owner(self) -> None:
+        os.environ["GROWHELPER_TELEGRAM_ADMIN_USERS"] = "900,901"
+        with patch.object(plugin.telegram, "send_text", return_value={"message_id": "503"}) as send:
+            result = json.loads(plugin._handle_request_change({"text": "Добавьте новый отчёт"}))
+        self.assertTrue(result["ok"])
+        self.assertEqual(send.call_args.kwargs["chat_id"], "900")
 
     def test_done_unpublished_cycle_queues_new_event_for_recovery(self) -> None:
         core.set_active_cycle(self.plant["plant_id"], "t_stale")

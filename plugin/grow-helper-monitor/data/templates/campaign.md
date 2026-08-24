@@ -6,7 +6,7 @@ Species: {{SPECIES}}
 Cultivar/source: {{CULTIVAR}}
 Company: {{COMPANY}}
 Start date: {{STARTED_AT}}
-Status: active
+Status: {{CAMPAIGN_STATUS}}
 
 ## Primary outcome
 

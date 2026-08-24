@@ -7,7 +7,9 @@ provides_tools:
   - growhelper_plants
   - growhelper_start_cycle
   - growhelper_publish_reply
+  - growhelper_request_change
 provides_hooks:
   - pre_tool_call
+  - pre_gateway_dispatch
   - pre_llm_call
   - post_llm_call

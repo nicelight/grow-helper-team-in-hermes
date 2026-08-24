@@ -1,13 +1,10 @@
-"""Small Telegram Bot API client used for asynchronous final/admin replies.
-
-The client intentionally supports only plain text.  GrowHelper keeps final
-answers below Telegram's limit, which makes delivery and idempotency easier to
-reason about than a multi-chunk publisher.
-"""
+"""Small Telegram Bot API client for GrowHelper text, keyboards and avatars."""
 from __future__ import annotations
 
 import json
+import mimetypes
 import os
+import secrets
 import socket
 import urllib.error
 import urllib.parse
@@ -16,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 MAX_TEXT_CHARS = 4000  # Below Telegram's 4096 UTF-16-unit sendMessage limit.
+MAX_CAPTION_CHARS = 1000  # Below Telegram's 1024-unit media-caption limit.
 
 
 class TelegramDeliveryError(RuntimeError):
@@ -45,6 +43,59 @@ def ensure_text_limit(text: str) -> None:
         raise ValueError(
             f"Telegram text is {units} UTF-16 units; safe limit is {MAX_TEXT_CHARS}"
         )
+
+
+def _reply_markup(
+    *, reply_keyboard: list[list[str]] | None = None, remove_keyboard: bool = False
+) -> str:
+    if reply_keyboard and remove_keyboard:
+        raise ValueError("reply_keyboard and remove_keyboard are mutually exclusive")
+    if remove_keyboard:
+        return json.dumps({"remove_keyboard": True}, ensure_ascii=False)
+    if reply_keyboard:
+        keyboard = [
+            [{"text": str(label)} for label in row if str(label).strip()]
+            for row in reply_keyboard
+        ]
+        keyboard = [row for row in keyboard if row]
+        if keyboard:
+            return json.dumps({
+                "keyboard": keyboard,
+                "resize_keyboard": True,
+                "one_time_keyboard": True,
+            }, ensure_ascii=False)
+    return ""
+
+
+def _parse_response(raw: str, *, fallback_chat_id: str) -> dict[str, Any]:
+    try:
+        result = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise TelegramDeliveryUncertainError(
+            f"Telegram returned an unreadable response: {raw[:500]}"
+        ) from exc
+    if not result.get("ok"):
+        raise TelegramRejectedError(f"Telegram rejected message: {result}")
+    message = result.get("result") or {}
+    return {
+        "ok": True,
+        "message_id": str(message.get("message_id") or ""),
+        "chat_id": str((message.get("chat") or {}).get("id") or fallback_chat_id),
+        "date": message.get("date"),
+    }
+
+
+def _open(request: urllib.request.Request) -> str:
+    timeout = float(os.getenv("GROWHELPER_TELEGRAM_TIMEOUT_SECONDS", "20"))
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise TelegramRejectedError(f"Telegram HTTP {exc.code}: {body[:1000]}") from exc
+    except (urllib.error.URLError, TimeoutError, socket.timeout, OSError) as exc:
+        reason = getattr(exc, "reason", exc)
+        raise TelegramDeliveryUncertainError(f"Telegram delivery result is uncertain: {reason}") from exc
 
 
 def _parse_env_file(path: Path) -> dict[str, str]:
@@ -87,6 +138,8 @@ def send_text(
     thread_id: str = "",
     reply_to_message_id: str = "",
     disable_notification: bool = False,
+    reply_keyboard: list[list[str]] | None = None,
+    remove_keyboard: bool = False,
 ) -> dict[str, Any]:
     text = str(text or "").strip()
     if not text:
@@ -112,6 +165,9 @@ def send_text(
             payload["allow_sending_without_reply"] = True
         except ValueError:
             pass
+    markup = _reply_markup(reply_keyboard=reply_keyboard, remove_keyboard=remove_keyboard)
+    if markup:
+        payload["reply_markup"] = markup
 
     url = f"https://api.telegram.org/bot{bot_token()}/sendMessage"
     encoded = urllib.parse.urlencode(payload).encode("utf-8")
@@ -121,33 +177,65 @@ def send_text(
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         method="POST",
     )
-    timeout = float(os.getenv("GROWHELPER_TELEGRAM_TIMEOUT_SECONDS", "20"))
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            raw = response.read().decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as exc:
-        # Telegram answered with a definitive 4xx/5xx rejection.  A controlled
-        # retry may be useful after correcting the cause.
-        body = exc.read().decode("utf-8", errors="replace")
-        raise TelegramRejectedError(f"Telegram HTTP {exc.code}: {body[:1000]}") from exc
-    except (urllib.error.URLError, TimeoutError, socket.timeout, OSError) as exc:
-        # The TCP request can succeed while the response is lost.  Treat the
-        # result as uncertain, not as a safe-to-retry failure.
-        reason = getattr(exc, "reason", exc)
-        raise TelegramDeliveryUncertainError(f"Telegram delivery result is uncertain: {reason}") from exc
+    return _parse_response(_open(request), fallback_chat_id=str(chat_id))
 
-    try:
-        result = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise TelegramDeliveryUncertainError(
-            f"Telegram returned an unreadable response: {raw[:500]}"
-        ) from exc
-    if not result.get("ok"):
-        raise TelegramRejectedError(f"Telegram rejected message: {result}")
-    message = result.get("result") or {}
-    return {
-        "ok": True,
-        "message_id": str(message.get("message_id") or ""),
-        "chat_id": str((message.get("chat") or {}).get("id") or chat_id),
-        "date": message.get("date"),
+
+def send_photo(
+    *,
+    chat_id: str,
+    photo_path: str | Path,
+    caption: str = "",
+    thread_id: str = "",
+    disable_notification: bool = False,
+    remove_keyboard: bool = False,
+) -> dict[str, Any]:
+    """Upload one local Plant avatar with an optional short caption."""
+    chat_id = str(chat_id or "").strip()
+    if not chat_id:
+        raise ValueError("Telegram chat_id is empty")
+    path = Path(photo_path).expanduser().resolve(strict=True)
+    if not path.is_file():
+        raise ValueError("Telegram photo_path is not a file")
+    caption = str(caption or "").strip()
+    if text_units(caption) > MAX_CAPTION_CHARS:
+        raise ValueError("Telegram photo caption is too long")
+
+    fields: dict[str, str] = {
+        "chat_id": chat_id,
+        "caption": caption,
+        "disable_notification": "true" if disable_notification else "false",
     }
+    if str(thread_id or "").strip():
+        try:
+            fields["message_thread_id"] = str(int(thread_id))
+        except ValueError:
+            pass
+    markup = _reply_markup(remove_keyboard=remove_keyboard)
+    if markup:
+        fields["reply_markup"] = markup
+
+    boundary = "GrowHelper" + secrets.token_hex(12)
+    chunks: list[bytes] = []
+    for name, value in fields.items():
+        chunks.extend([
+            f"--{boundary}\r\n".encode(),
+            f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode(),
+            value.encode("utf-8"),
+            b"\r\n",
+        ])
+    mime = mimetypes.guess_type(path.name)[0] or "image/jpeg"
+    chunks.extend([
+        f"--{boundary}\r\n".encode(),
+        f'Content-Disposition: form-data; name="photo"; filename="{path.name}"\r\n'.encode(),
+        f"Content-Type: {mime}\r\n\r\n".encode(),
+        path.read_bytes(),
+        b"\r\n",
+        f"--{boundary}--\r\n".encode(),
+    ])
+    request = urllib.request.Request(
+        f"https://api.telegram.org/bot{bot_token()}/sendPhoto",
+        data=b"".join(chunks),
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST",
+    )
+    return _parse_response(_open(request), fallback_chat_id=chat_id)

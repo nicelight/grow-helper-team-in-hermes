@@ -163,6 +163,8 @@ grow-helper-team/
 
 ## 5. Multi-user routing, Inception и workspace
 
+В Telegram агент публично является только GrowHelper: дневником наблюдений и экспертным помощником по выращиванию. Он не представляется Hermes или универсальным агентом. Рабочая область ограничена активным Plant, созданием/выбором Plants и объяснением GrowHelper; явно посторонний запрос получает короткое перенаправление к ChatGPT или Claude. Запрос изменить функциональность пересылается через узкий tool первому numeric ID из `GROWHELPER_TELEGRAM_ADMIN_USERS`, без возможности выбрать другого получателя.
+
 Минимальный registry:
 
 ```text
@@ -171,30 +173,32 @@ grow-helper-team/
 
 В командах от пользователя `growhelper` этот путь можно сокращать до `~/grow-helper/plants/index.json`.
 
-Для Plant хранить `plant_id`, nickname, Telegram user/chat identifiers, необязательное company name, board slug, workspace path, вид/сорт, Campaign status и active Cycle. Изменения registry выполняются атомарно под file lock. Отдельная company model пока не нужна.
+Для Plant хранить `plant_id`, nickname, Telegram user/chat identifiers, необязательное company name, board slug, workspace path, вид/сорт, Campaign status, onboarding stage, avatar path и active Cycle. Binding также может хранить короткое `pending_addplant` до получения аватара. Старые записи без новых полей считаются `active/complete` без аватара. Изменения registry выполняются атомарно под file lock. Отдельная company model пока не нужна.
 
 Routing:
 
 ```text
 явно существующий Plant → использовать его board
-явно другой Plant       → предложить новую Campaign
+явно другой Plant       → предложить `/plant` или `/addplant`
 неоднозначно            → один короткий вопрос
 ```
 
-Новая board создаётся только после подтверждения пользователя. Server-side операции всегда указывают board явно; глобальный `boards switch` не используется. Dispatcher worker уже получает board через `HERMES_KANBAN_BOARD`.
+Новый Plant и его board создаются детерминированно после первой валидной фотографии в `/addplant`, со статусом `onboarding`. Server-side операции всегда указывают board явно; глобальный `boards switch` не используется. Dispatcher worker уже получает board через `HERMES_KANBAN_BOARD`.
 
-Если Plant не имеет nickname, GrowHelper предлагает несколько коротких русских имён. При отказе выбирается первое свободное имя из `plantNamesDefault.md`; список не дублируется в handoff.
+При создании Plant сразу получает первое глобально свободное имя из `plantNamesDefault.md`. Следующее обычное сообщение может переименовать Plant; иначе предложенное имя остаётся и повторно не запрашивается.
 
 ### Inception
 
-До обычных Cycles GrowHelper выясняет:
+`/addplant` сначала требует аватар. До валидного изображения обсуждение нового Plant не начинается. Изображение приводится к JPEG, сжимается до `500 000` байт и сохраняется только как `photos/avatar.jpg`; тяжёлый оригинал аватара в Plant workspace не копируется.
+
+После создания Plant и предложения имени GrowHelper выясняет:
 
 - что выращивается и каково исходное состояние;
 - среду и доступные инструменты;
 - желаемый результат и наблюдаемые критерии успеха;
 - ограничения пользователя.
 
-Сначала формируется Campaign draft, а не стратегия выращивания. После явного подтверждения создаются board/workspace и записываются `campaign.md` и baseline. Baseline может быть `complete` или `partial`; неизвестные данные не блокируют Campaign.
+Сначала формируется Campaign draft, а не стратегия выращивания. После явного подтверждения Plant переводится из `onboarding` в `active`; `campaign.md` и baseline уточняются в его уже существующем workspace. Baseline может быть `complete` или `partial`; неизвестные данные не блокируют Campaign.
 
 ### Workspace
 
@@ -206,7 +210,7 @@ Routing:
 ├── history-summary.md
 ├── activity.jsonl
 ├── journal/
-├── photos/
+├── photos/avatar.jpg
 └── dataset/{index.jsonl,selected/}
 ```
 
@@ -220,17 +224,19 @@ history-summary.md → ключевая долговременная траек�
 journal/           → подробный domain worklog
 ```
 
-Отдельный каталог `rounds/` не нужен: он дублировал бы Kanban. Канонические campaign/baseline/current-state/history/journal изменяет GrowHelper, `dataset/` — только Curator; остальные specialists работают read-only. Оригиналы фото хранятся в `photos/`, а Kanban attachments используются лишь для передачи файлов workers.
+Отдельный каталог `rounds/` не нужен: он дублировал бы Kanban. Канонические campaign/baseline/current-state/history/journal изменяет GrowHelper, `dataset/` — только Curator; остальные specialists работают read-only. Диагностические фото хранятся в `photos/`; для аватара сохраняется только сжатая копия. Kanban attachments используются лишь для передачи файлов workers.
 
 ---
 
 ## 6. Telegram event → Cycle → reply
 
-Приветствия, подтверждения и простые вопросы GrowHelper обрабатывает непосредственно, без Kanban.
+Публичное Telegram-меню содержит ровно `/addplant`, `/plant`, `/compress`, `/new`, `/status`, `/context`. Оно настраивается штатным `command_menu` Hermes с `priority_mode: replace` и лимитом 6; Hermes core не патчится. `/plant` показывает одноразовую reply-клавиатуру только с Plants владельца и после выбора присылает аватар. `/help` и `/whoami` могут оставаться доступны при ручном вводе как обязательный floor Hermes, но в меню не показываются.
+
+Приветствия, подтверждения, onboarding и простые вопросы GrowHelper обрабатывает непосредственно, без Kanban. `pre_gateway_dispatch` только захватывает Telegram event и переписывает ответы одноразовой клавиатуры или pending-avatar в plugin-команды; до штатной авторизации он ничего не записывает и не отправляет.
 
 Для значимого события:
 
-1. `pre_llm_call` hook удерживает LLM-visible сообщение и session/message ids в request-scoped context.
+1. `pre_llm_call` hook удерживает LLM-visible сообщение и session/message ids в request-scoped context и добавляет только четыре компактных файла активного Plant.
 2. GrowHelper определяет Plant и тип события.
 3. Plugin tool `growhelper_start_cycle` сохраняет captured event в `activity.jsonl` нужного Plant и создаёт root task на явной board с idempotency key на основе Telegram message id.
 4. Gateway при необходимости отвечает кратким подтверждением.
@@ -492,13 +498,14 @@ Dashboard plugin не копирует Kanban в свою DB, используе
 
 Plugin выполняет только glue-функции:
 
-1. связать Telegram message/session с Plant и Cycle;
-2. вести `activity.jsonl`;
-3. создать root Cycle через `growhelper_start_cycle`;
-4. идемпотентно опубликовать ответ через `growhelper_publish_reply`;
-5. предоставить read API для Dashboard;
-6. отправить `admin_recommendation`;
-7. проверить metadata schema и показать warning.
+1. выполнить `/addplant` и `/plant`, включая сжатый аватар и active binding;
+2. связать Telegram message/session с Plant и Cycle;
+3. вести `activity.jsonl`;
+4. создать root Cycle через `growhelper_start_cycle`;
+5. идемпотентно опубликовать ответ через `growhelper_publish_reply`;
+6. предоставить read API для Dashboard;
+7. отправить `admin_recommendation` или фиксированному владельцу запрос на изменение GrowHelper;
+8. проверить metadata schema и показать warning.
 
 Plugin не принимает агрономические решения, не строит собственный scheduler, не дублирует Kanban и не управляет действиями пользователя.
 
@@ -525,20 +532,18 @@ GrowHelper workflow → raw Kanban task/run → Hermes worker session
 
 ## 15. Минимальный acceptance test
 
-1. Два Telegram-пользователя одновременно создают Cycles только на своих boards.
-2. Новый Plant не создаётся без подтверждения; routing не зависит от current board.
-3. Photo Cycle идёт `vision → plant-state → advisor`; vision не пишет diagnosis/recommendation.
-4. Measurement-only Cycle допускает параллельные state/advisor.
-5. Dashboard показывает точный user message, GrowHelper reply и связь с Cycle.
-6. Dashboard показывает тот же specialist `summary + metadata`, который получил Orchestrator.
-7. Для worker task открывается её Hermes session.
-8. Retry не создаёт duplicate tasks и не отправляет reply повторно.
-9. Candidate не становится validated без outcome.
-10. `history-summary.md` сохраняет turning points, не копируя journal.
-11. Admin recommendation отправляется через Telegram и отображается отдельно.
-12. Пользователь не получает внутренних Kanban completion messages.
-13. После restart доступны board, activity, Plant files и незавершённый Cycle.
-14. GrowHelper Dashboard и агенты, запущенные от `growhelper`, не могут читать `/root/.hermes`.
+1. Меню показывает шесть согласованных команд; `/addplant` создаёт onboarding Plant только после валидного аватара не более 500 КБ.
+2. `/plant` показывает только Plants владельца, переключает binding и возвращает аватар.
+3. Два Telegram-пользователя одновременно создают Cycles только на своих boards; routing не зависит от current board.
+4. Photo Cycle идёт `vision → plant-state → advisor`; vision не пишет diagnosis/recommendation.
+5. Measurement-only Cycle допускает параллельные state/advisor.
+6. Dashboard показывает точный user message, GrowHelper reply, связь с Cycle и specialist `summary + metadata`.
+7. Retry не создаёт duplicate tasks и не отправляет reply повторно.
+8. Candidate не становится validated без outcome; `history-summary.md` хранит turning points, не копируя journal.
+9. Admin recommendation отправляется через Telegram и отображается отдельно.
+10. Пользователь не получает внутренних Kanban completion messages.
+11. После restart доступны board, activity, Plant files и незавершённый Cycle.
+12. GrowHelper Dashboard и агенты, запущенные от `growhelper`, не могут читать `/root/.hermes`.
 
 ---
 

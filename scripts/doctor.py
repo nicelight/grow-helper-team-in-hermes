@@ -102,6 +102,7 @@ def check_registration(report: Report) -> None:
         def __init__(self) -> None:
             self.tools: list[str] = []
             self.hooks: list[str] = []
+            self.commands: list[str] = []
 
         def register_tool(self, **kwargs: Any) -> None:
             self.tools.append(str(kwargs.get("name") or ""))
@@ -110,16 +111,35 @@ def check_registration(report: Report) -> None:
             del callback
             self.hooks.append(name)
 
+        def register_command(self, name: str, **kwargs: Any) -> None:
+            del kwargs
+            self.commands.append(name)
+
     try:
         import growhelper_monitor
         ctx = FakeContext()
         growhelper_monitor.register(ctx)
-        expected_tools = {"growhelper_plants", "growhelper_start_cycle", "growhelper_publish_reply"}
-        expected_hooks = {"pre_tool_call", "pre_llm_call", "post_llm_call"}
-        if expected_tools.issubset(set(ctx.tools)) and expected_hooks.issubset(set(ctx.hooks)):
-            report.ok("plugin registration", f"tools={ctx.tools}; hooks={ctx.hooks}")
+        expected_tools = {
+            "growhelper_plants", "growhelper_start_cycle",
+            "growhelper_publish_reply", "growhelper_request_change",
+        }
+        expected_hooks = {
+            "pre_tool_call", "pre_gateway_dispatch", "pre_llm_call", "post_llm_call",
+        }
+        if (
+            expected_tools.issubset(set(ctx.tools))
+            and expected_hooks.issubset(set(ctx.hooks))
+            and set(ctx.commands) == {"addplant", "plant"}
+        ):
+            report.ok(
+                "plugin registration",
+                f"tools={ctx.tools}; hooks={ctx.hooks}; commands={ctx.commands}",
+            )
         else:
-            report.error("plugin registration", f"unexpected tools/hooks: {ctx.tools} / {ctx.hooks}")
+            report.error(
+                "plugin registration",
+                f"unexpected tools/hooks/commands: {ctx.tools} / {ctx.hooks} / {ctx.commands}",
+            )
     except Exception as exc:
         report.error("plugin import", repr(exc))
 
@@ -191,18 +211,32 @@ def check_profile_config(report: Report, hermes_root: Path, profile: str) -> Non
         if isinstance(admins, list) and admins and all(str(item).isascii() and str(item).isdecimal() for item in admins):
             report.ok("Telegram admin split", f"admins={len(admins)}")
             commands = telegram_extra.get("user_allowed_commands")
-            if commands == []:
-                report.ok("Telegram regular-user commands", "only Hermes /help and /whoami floor")
+            expected_commands = ["addplant", "plant", "compress", "new", "status", "context"]
+            if commands == expected_commands:
+                report.ok("Telegram regular-user commands", repr(commands))
             else:
-                report.warn(
+                report.error(
                     "Telegram regular-user commands",
-                    f"user_allowed_commands={commands!r}; review before a multi-user pilot",
+                    f"expected {expected_commands!r}, got {commands!r}",
                 )
         else:
             report.warn(
                 "Telegram admin split",
                 "gateway.platforms.telegram.extra.allow_admin_from is not configured",
             )
+        menu = (
+            ((config.get("platforms") or {}).get("telegram") or {})
+            .get("extra", {}).get("command_menu", {})
+        )
+        expected_menu = {
+            "max_commands": 6,
+            "priority_mode": "replace",
+            "priority": ["addplant", "plant", "compress", "new", "status", "context"],
+        }
+        if menu == expected_menu:
+            report.ok("Telegram command menu", "six GrowHelper commands")
+        else:
+            report.error("Telegram command menu", f"expected {expected_menu!r}, got {menu!r}")
 
 
 def service_state(name: str) -> tuple[str, str]:

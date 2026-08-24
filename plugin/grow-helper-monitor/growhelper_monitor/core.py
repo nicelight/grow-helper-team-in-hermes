@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import io
 import json
 import os
 import re
@@ -27,6 +28,7 @@ except ImportError:  # pragma: no cover - non-POSIX developer fallback.
     fcntl = None  # type: ignore[assignment]
 
 REGISTRY_SCHEMA_VERSION = 1
+MAX_AVATAR_BYTES = 500_000
 PLANT_ID_RE = re.compile(r"^plt_[a-f0-9]{8,32}$")
 BOARD_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 MEDIA_EXTENSIONS = {
@@ -214,6 +216,15 @@ def _owner_matches(plant: dict[str, Any], *, platform: str = "", chat_id: str = 
     return True
 
 
+def _plant_view(plant: dict[str, Any]) -> dict[str, Any]:
+    """Return a backward-compatible Plant view without rewriting the registry."""
+    value = dict(plant)
+    value.setdefault("campaign_status", "active")
+    value.setdefault("onboarding_stage", "complete")
+    value.setdefault("avatar_path", None)
+    return value
+
+
 def list_plants(*, platform: str = "", chat_id: str = "", user_id: str = "", include_closed: bool = True) -> list[dict[str, Any]]:
     registry = load_registry()
     rows = []
@@ -226,7 +237,7 @@ def list_plants(*, platform: str = "", chat_id: str = "", user_id: str = "", inc
             continue
         if not include_closed and plant.get("campaign_status") == "closed":
             continue
-        rows.append(dict(plant))
+        rows.append(_plant_view(plant))
     rows.sort(key=lambda p: str(p.get("created_at") or ""), reverse=True)
     return rows
 
@@ -235,7 +246,7 @@ def get_plant(plant_id: str) -> Optional[dict[str, Any]]:
     if not PLANT_ID_RE.fullmatch(str(plant_id or "")):
         return None
     plant = load_registry()["plants"].get(plant_id)
-    return dict(plant) if isinstance(plant, dict) else None
+    return _plant_view(plant) if isinstance(plant, dict) else None
 
 
 def resolve_plant(
@@ -255,7 +266,7 @@ def resolve_plant(
             plant, platform=platform, chat_id=chat_id, user_id=user_id
         ):
             raise PermissionError("Plant belongs to another Telegram binding")
-        return dict(plant)
+        return _plant_view(plant)
 
     if platform and chat_id:
         binding = registry["bindings"].get(binding_key(platform, chat_id))
@@ -263,7 +274,7 @@ def resolve_plant(
             active = binding.get("active_plant_id")
             plant = registry["plants"].get(active)
             if isinstance(plant, dict) and (not user_id or _owner_matches(plant, user_id=user_id)):
-                return dict(plant)
+                return _plant_view(plant)
 
     candidates = []
     for plant in registry["plants"].values():
@@ -272,7 +283,7 @@ def resolve_plant(
         ):
             candidates.append(plant)
     if len(candidates) == 1:
-        return dict(candidates[0])
+        return _plant_view(candidates[0])
     if not candidates:
         raise KeyError("No Plant is registered for this Telegram chat")
     raise ValueError("Several Plants match; pass plant_id or select an active Plant")
@@ -292,9 +303,106 @@ def set_active_plant(*, plant_id: str, platform: str, chat_id: str, user_id: str
             "active_plant_id": plant_id,
             "updated_at": now_iso(),
         }
-        return dict(plant)
+        return _plant_view(plant)
 
     return mutate_registry(update)
+
+
+def get_binding(*, platform: str, chat_id: str) -> dict[str, Any]:
+    binding = load_registry()["bindings"].get(binding_key(platform, chat_id))
+    return dict(binding) if isinstance(binding, dict) else {}
+
+
+def set_pending_addplant(
+    *, platform: str, chat_id: str, user_id: str = "", command_message_id: str = ""
+) -> dict[str, Any]:
+    """Start or replace the deterministic pre-Plant avatar step."""
+    timestamp = now_iso()
+
+    def update(registry: dict[str, Any]) -> dict[str, Any]:
+        key = binding_key(platform, chat_id)
+        current = registry["bindings"].get(key)
+        binding = dict(current) if isinstance(current, dict) else {}
+        binding.update({
+            "platform": str(platform),
+            "chat_id": str(chat_id),
+            "user_id": str(user_id or ""),
+            "updated_at": timestamp,
+            "pending_addplant": {
+                "stage": "awaiting_avatar",
+                "user_id": str(user_id or ""),
+                "requested_at": timestamp,
+                "command_message_id": str(command_message_id or ""),
+            },
+        })
+        registry["bindings"][key] = binding
+        return dict(binding["pending_addplant"])
+
+    return mutate_registry(update)
+
+
+def pending_addplant(*, platform: str, chat_id: str, user_id: str = "") -> dict[str, Any]:
+    binding = get_binding(platform=platform, chat_id=chat_id)
+    pending = binding.get("pending_addplant")
+    if not isinstance(pending, dict) or pending.get("stage") != "awaiting_avatar":
+        return {}
+    pending_user = str(pending.get("user_id") or "")
+    if user_id and pending_user and pending_user != str(user_id):
+        return {}
+    return dict(pending)
+
+
+def clear_pending_addplant(*, platform: str, chat_id: str, user_id: str = "") -> None:
+    def update(registry: dict[str, Any]) -> None:
+        binding = registry["bindings"].get(binding_key(platform, chat_id))
+        if not isinstance(binding, dict):
+            return
+        pending = binding.get("pending_addplant")
+        if not isinstance(pending, dict):
+            return
+        pending_user = str(pending.get("user_id") or "")
+        if user_id and pending_user and pending_user != str(user_id):
+            return
+        binding.pop("pending_addplant", None)
+        binding["updated_at"] = now_iso()
+
+    mutate_registry(update)
+
+
+def compress_avatar(source_path: str | Path) -> bytes:
+    """Validate and encode one recognizable JPEG avatar under 500 KB."""
+    try:
+        from PIL import Image, ImageOps
+    except ImportError as exc:  # pragma: no cover - Pillow is part of Hermes runtime.
+        raise RuntimeError("Pillow is required to process Plant avatars") from exc
+
+    source = Path(source_path).expanduser().resolve(strict=True)
+    if not source.is_file():
+        raise ValueError("Avatar source is not a file")
+    try:
+        with Image.open(source) as opened:
+            image = ImageOps.exif_transpose(opened)
+            image.load()
+            if image.mode in {"RGBA", "LA"} or (image.mode == "P" and "transparency" in image.info):
+                rgba = image.convert("RGBA")
+                background = Image.new("RGB", rgba.size, "white")
+                background.paste(rgba, mask=rgba.getchannel("A"))
+                image = background
+            else:
+                image = image.convert("RGB")
+    except Exception as exc:
+        raise ValueError("Uploaded file is not a readable image") from exc
+
+    for max_side in (1600, 1280, 1024, 800, 640, 512, 384, 256):
+        candidate = image.copy()
+        candidate.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+        for quality in (85, 75, 65, 55, 45, 35):
+            output = io.BytesIO()
+            candidate.save(output, format="JPEG", quality=quality, optimize=True)
+            value = output.getvalue()
+            if len(value) <= MAX_AVATAR_BYTES:
+                return value
+    raise ValueError("Image could not be compressed below 500 KB")
 
 
 
@@ -391,6 +499,9 @@ def _create_plant_unlocked(
     cultivar: str = "",
     campaign_markdown: str = "",
     baseline_markdown: str = "",
+    campaign_status: str = "active",
+    onboarding_stage: str = "complete",
+    avatar_jpeg: bytes = b"",
     board_creator: Optional[Callable[..., Any]] = None,
 ) -> dict[str, Any]:
     """Create a Plant workspace, board and registry row.
@@ -409,6 +520,12 @@ def _create_plant_unlocked(
     owner_user_id = _safe_text(owner_user_id, max_chars=80)
     if not owner_chat_id:
         raise ValueError("owner_chat_id is required")
+    if campaign_status not in {"onboarding", "active", "closed"}:
+        raise ValueError("Unsupported campaign_status")
+    if onboarding_stage not in {"awaiting_name", "collecting_campaign", "complete"}:
+        raise ValueError("Unsupported onboarding_stage")
+    if avatar_jpeg and len(avatar_jpeg) > MAX_AVATAR_BYTES:
+        raise ValueError("Plant avatar exceeds 500 KB")
 
     # Random IDs make collisions negligible, but still check the registry and disk.
     for _ in range(10):
@@ -430,6 +547,7 @@ def _create_plant_unlocked(
         "STARTED_AT": started_at,
         "DATE": started_at[:10],
         "CYCLE_ID": "pending",
+        "CAMPAIGN_STATUS": campaign_status,
     }
 
     workspace.mkdir(parents=True, exist_ok=False)
@@ -454,6 +572,13 @@ def _create_plant_unlocked(
             target.write_text(content.rstrip() + ("\n" if content else ""), encoding="utf-8")
             _chmod_private(target, 0o600)
 
+        avatar_path: Optional[str] = None
+        if avatar_jpeg:
+            avatar = workspace / "photos" / "avatar.jpg"
+            avatar.write_bytes(avatar_jpeg)
+            _chmod_private(avatar, 0o600)
+            avatar_path = "photos/avatar.jpg"
+
         if board_creator is not None:
             board_creator(
                 board_slug=board_slug,
@@ -474,7 +599,9 @@ def _create_plant_unlocked(
             "telegram_thread_id": _safe_text(owner_thread_id, max_chars=80),
             "board_slug": board_slug,
             "workspace_path": str(workspace),
-            "campaign_status": "active",
+            "campaign_status": campaign_status,
+            "onboarding_stage": onboarding_stage,
+            "avatar_path": avatar_path,
             "active_cycle_id": None,
             "created_at": started_at,
             "updated_at": started_at,
@@ -513,6 +640,9 @@ def create_plant(
     cultivar: str = "",
     campaign_markdown: str = "",
     baseline_markdown: str = "",
+    campaign_status: str = "active",
+    onboarding_stage: str = "complete",
+    avatar_jpeg: bytes = b"",
     board_creator: Optional[Callable[..., Any]] = None,
 ) -> dict[str, Any]:
     """Serialize Plant provisioning and run the deterministic creator.
@@ -535,8 +665,101 @@ def create_plant(
             cultivar=cultivar,
             campaign_markdown=campaign_markdown,
             baseline_markdown=baseline_markdown,
+            campaign_status=campaign_status,
+            onboarding_stage=onboarding_stage,
+            avatar_jpeg=avatar_jpeg,
             board_creator=board_creator,
         )
+
+
+def _replace_markdown_field(path: Path, field_name: str, value: str) -> None:
+    if not path.is_file():
+        return
+    text = path.read_text(encoding="utf-8", errors="replace")
+    pattern = re.compile(rf"^{re.escape(field_name)}\s*:\s*.*$", re.MULTILINE)
+    replacement = f"{field_name}: {value}"
+    updated = pattern.sub(replacement, text, count=1)
+    if updated == text and not pattern.search(text):
+        updated = text.rstrip() + "\n" + replacement + "\n"
+    path.write_text(updated, encoding="utf-8")
+    _chmod_private(path, 0o600)
+
+
+def rename_plant(
+    *, plant_id: str, nickname: str, platform: str = "", chat_id: str = "", user_id: str = ""
+) -> dict[str, Any]:
+    nickname = _safe_text(nickname, max_chars=120)
+    if not nickname:
+        raise ValueError("nickname is required")
+
+    def update(registry: dict[str, Any]) -> dict[str, Any]:
+        plant = registry["plants"].get(plant_id)
+        if not isinstance(plant, dict):
+            raise KeyError(f"Plant {plant_id!r} not found")
+        if (platform or chat_id or user_id) and not _owner_matches(
+            plant, platform=platform, chat_id=chat_id, user_id=user_id
+        ):
+            raise PermissionError("Plant belongs to another Telegram binding")
+        normalized = normalize_nickname(nickname)
+        for other_id, other in registry["plants"].items():
+            if other_id != plant_id and isinstance(other, dict) and normalize_nickname(other.get("nickname")) == normalized:
+                raise ValueError(f"Plant nickname {nickname!r} is already in use")
+        plant["nickname"] = nickname
+        plant["updated_at"] = now_iso()
+        _replace_markdown_field(Path(plant["workspace_path"]) / "campaign.md", "Nickname", nickname)
+        return _plant_view(plant)
+
+    return mutate_registry(update)
+
+
+def advance_onboarding(plant_id: str) -> dict[str, Any]:
+    """Advance the one-shot name prompt after the next ordinary user turn."""
+    def update(registry: dict[str, Any]) -> dict[str, Any]:
+        plant = registry["plants"].get(plant_id)
+        if not isinstance(plant, dict):
+            raise KeyError(f"Plant {plant_id!r} not found")
+        if plant.get("onboarding_stage") == "awaiting_name":
+            plant["onboarding_stage"] = "collecting_campaign"
+            plant["updated_at"] = now_iso()
+        return _plant_view(plant)
+
+    return mutate_registry(update)
+
+
+def activate_plant(
+    *, plant_id: str, campaign_markdown: str, baseline_markdown: str,
+    platform: str = "", chat_id: str = "", user_id: str = ""
+) -> dict[str, Any]:
+    campaign_markdown = str(campaign_markdown or "").strip()
+    baseline_markdown = str(baseline_markdown or "").strip()
+    if not campaign_markdown or not baseline_markdown:
+        raise ValueError("Campaign and Baseline markdown are required")
+
+    def update(registry: dict[str, Any]) -> dict[str, Any]:
+        plant = registry["plants"].get(plant_id)
+        if not isinstance(plant, dict):
+            raise KeyError(f"Plant {plant_id!r} not found")
+        if (platform or chat_id or user_id) and not _owner_matches(
+            plant, platform=platform, chat_id=chat_id, user_id=user_id
+        ):
+            raise PermissionError("Plant belongs to another Telegram binding")
+        plant["campaign_status"] = "active"
+        plant["onboarding_stage"] = "complete"
+        plant["updated_at"] = now_iso()
+        workspace = Path(plant["workspace_path"])
+        campaign_path = workspace / "campaign.md"
+        baseline_path = workspace / "baseline.md"
+        campaign_path.write_text(campaign_markdown.rstrip() + "\n", encoding="utf-8")
+        baseline_path.write_text(baseline_markdown.rstrip() + "\n", encoding="utf-8")
+        _chmod_private(campaign_path, 0o600)
+        _chmod_private(baseline_path, 0o600)
+        _replace_markdown_field(campaign_path, "Plant ID", plant_id)
+        _replace_markdown_field(campaign_path, "Nickname", str(plant.get("nickname") or ""))
+        _replace_markdown_field(campaign_path, "Status", "active")
+        _replace_markdown_field(baseline_path, "Plant ID", plant_id)
+        return _plant_view(plant)
+
+    return mutate_registry(update)
 
 
 def set_active_cycle(plant_id: str, cycle_id: Optional[str]) -> None:
