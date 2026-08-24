@@ -63,6 +63,33 @@ GrowHelper must remain Hermes-native and KISS-oriented:
 - prefer the smallest solution that solves a real problem.
 Do not add services, abstractions, databases, queues, or agent roles only because they look architecturally cleaner.
 
+## End-user contract
+
+- In Telegram the only public identity is GrowHelper. Do not present it as
+  Hermes or a universal agent; Profiles, Kanban and tools are internal details.
+- GrowHelper discusses cultivation of the active Plant, creation/selection of
+  Plants and its own operation. Preserve the exact off-topic response and the
+  short “what can you do” response from `profiles/grow-helper/SOUL.md`.
+- A Plant is one physically or territorially separate cultivation/nutrition
+  contour, such as a bed, windowsill or hydroponic setup. It may contain
+  different species.
+- The visible Telegram menu is exactly `/addplant`, `/plant`, `/compress`,
+  `/new`, `/status`, `/context`. Do not add `/help`; Hermes may still accept
+  `/help` and `/whoami` when typed manually.
+- `/addplant` waits for a valid avatar before creating an onboarding Plant.
+  Persist only `photos/avatar.jpg`, JPEG, at most `500_000` bytes; do not copy
+  the heavy avatar original into the Plant workspace.
+- `/plant` uses a one-time reply keyboard containing only the current owner's
+  Plants. Selection changes the active binding and returns the Plant avatar,
+  or a text fallback when no avatar exists.
+- `pre_gateway_dispatch` may capture data and rewrite deterministic commands,
+  but must not write state or send messages before Hermes authorization.
+- Keep cultivation-useful toolsets available. Requests to change GrowHelper
+  functionality go through `growhelper_request_change` to the first numeric ID
+  in `GROWHELPER_TELEGRAM_ADMIN_USERS`; users cannot choose the recipient.
+- Inject only compact context for the active Plant. Do not attach full
+  `activity.jsonl`, journal, dataset or Kanban history to every turn.
+
 ## Sources of truth
 The canonical persistent source of truth for project code is GitHub.
 Development may happen on the operator's local machine, directly on the server in a Git checkout, or temporarily in installed runtime files while debugging.
@@ -114,6 +141,7 @@ Canonical Plant workspace:
 - `activity.jsonl`
 - `journal/`
 - `photos/`
+- `photos/avatar.jpg` — optional compressed Plant avatar
 - `dataset/index.jsonl`
 - `dataset/selected/`
 Sources of truth:
@@ -136,7 +164,7 @@ Do not invoke `reviewer`, `task-followup` or `data-curator` in every Cycle. Do n
 
 ## Plugin responsibilities
 `grow-helper-monitor` is a glue layer, not a new backend.
-It may connect Telegram turns to Plants/Cycles, maintain `activity.jsonl`, create root Cycles through `growhelper_start_cycle`, publish final replies through `growhelper_publish_reply`, enforce idempotency, validate specialist metadata, expose Dashboard read APIs, and send admin recommendations.
+It may implement `/addplant` and `/plant`, connect Telegram turns to Plants/Cycles, maintain `activity.jsonl`, create root Cycles through `growhelper_start_cycle`, publish final replies through `growhelper_publish_reply`, enforce idempotency, validate specialist metadata, expose Dashboard read APIs, and send admin recommendations or fixed-owner change requests.
 It must not make agronomic decisions, duplicate Kanban, implement a parallel scheduler, become a domain backend, or control the user's real-world actions.
 
 ## Development policy
@@ -153,11 +181,17 @@ If a runtime edit is meant to persist, reproduce it in the Git repository, test 
 Do not treat uncommitted server-only edits as finished work.
 
 ## Tests
+Add only the smallest focused tests needed for changed deterministic behavior.
+Reuse the existing regression suite instead of building exhaustive matrices for
+prompt behavior or hypothetical edge cases.
+
 Before deploy:
 ```bash
 bash tests/run-tests.sh
 ```
 Do not consider a task complete with new known test failures.
+Automated Telegram tests must mock Bot API payloads. Real Telegram E2E is a
+manual operator check and is unverified until an interaction is observed.
 For release artifacts:
 ```bash
 bash scripts/build-release.sh
@@ -226,8 +260,10 @@ Require explicit operator approval before:
 - merging into `main`.
 
 ## Git workflow
-Use a task branch for non-trivial work.
-Do not merge into `main` or force-push without explicit approval.
+For the current project phase the operator has approved direct work on `main`.
+Before editing or pushing, fetch and confirm that local `main` matches the
+expected remote state. Never force-push. Use a task branch when the operator
+requests one or when unrelated concurrent work makes direct `main` unsafe.
 Before finishing:
 - run `git status`;
 - remove accidental generated files;
