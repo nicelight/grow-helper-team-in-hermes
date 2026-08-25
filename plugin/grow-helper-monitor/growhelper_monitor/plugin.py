@@ -35,6 +35,10 @@ def register(ctx: Any) -> None:
         "delplant", handler=commands._handle_delplant_command,
         description="Удалить Plant",
     )
+    ctx.register_command(
+        "feedback", handler=commands._handle_feedback_command,
+        description="Связь с разработчиком",
+    )
     ctx.register_hook("pre_tool_call", permissions._pre_tool_call)
     ctx.register_hook("pre_gateway_dispatch", gateway._pre_gateway_dispatch)
     ctx.register_hook("pre_llm_call", gateway._pre_llm_call)

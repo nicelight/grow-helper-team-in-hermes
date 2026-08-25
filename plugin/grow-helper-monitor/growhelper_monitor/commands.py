@@ -22,6 +22,7 @@ ADDPLANT_PHOTO_REMINDER = (
 )
 DELPLANT_CONFIRM_BUTTON = "Да, удалить Plant"
 DELPLANT_CANCEL_BUTTON = "Отмена"
+FEEDBACK_REPLY = "Не стесняйтесь написать разработчику — @dyingseed"
 
 
 def _log_direct_exchange(
@@ -315,3 +316,8 @@ def _handle_delplant_sync(raw_args: str) -> Optional[str]:
 
 async def _handle_delplant_command(raw_args: str) -> Optional[str]:
     return await asyncio.to_thread(_handle_delplant_sync, raw_args)
+
+
+async def _handle_feedback_command(raw_args: str) -> str:
+    del raw_args
+    return FEEDBACK_REPLY

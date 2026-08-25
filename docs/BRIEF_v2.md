@@ -234,7 +234,7 @@ journal/           → подробный domain worklog
 
 ## 6. Telegram event → Cycle → reply
 
-Публичное Telegram-меню содержит ровно `/addplant`, `/plant`, `/delplant`, `/compress`, `/new`, `/status`, `/context`. Оно настраивается штатным `command_menu` Hermes с `priority_mode: replace` и лимитом 7; Hermes core не патчится. `/plant` показывает одноразовую reply-клавиатуру только с Plants владельца и после выбора присылает аватар. `/delplant` показывает только Plants владельца и после явного подтверждения удаляет запись registry, workspace и Kanban board. `/help` и `/whoami` могут оставаться доступны при ручном вводе как обязательный floor Hermes, но в меню не показываются.
+Публичное Telegram-меню содержит ровно `/addplant`, `/plant`, `/delplant`, `/feedback`, `/compress`, `/new`, `/status`, `/context`. Оно настраивается штатным `command_menu` Hermes с `priority_mode: replace` и лимитом 8; Hermes core не патчится. `/plant` показывает одноразовую reply-клавиатуру только с Plants владельца и после выбора присылает аватар. `/delplant` показывает только Plants владельца и после явного подтверждения удаляет запись registry, workspace и Kanban board. `/feedback` отвечает точно `Не стесняйтесь написать разработчику — @dyingseed`, ничего не пересылает и не меняет состояние. `/help` и `/whoami` могут оставаться доступны при ручном вводе как обязательный floor Hermes, но в меню не показываются.
 
 Приветствия, подтверждения, onboarding и простые вопросы GrowHelper обрабатывает непосредственно, без Kanban. `pre_gateway_dispatch` только захватывает Telegram event и переписывает ответы одноразовой клавиатуры или pending-avatar в plugin-команды; до штатной авторизации он ничего не записывает и не отправляет.
 
@@ -502,7 +502,7 @@ Dashboard plugin не копирует Kanban в свою DB, используе
 
 Plugin выполняет только glue-функции:
 
-1. выполнить `/addplant`, `/plant` и подтверждаемое `/delplant`, включая сжатый аватар и active binding;
+1. выполнить `/addplant`, `/plant`, подтверждаемое `/delplant` и статическое `/feedback`, включая сжатый аватар и active binding;
 2. связать Telegram message/session с Plant и Cycle;
 3. вести `activity.jsonl`;
 4. создать root Cycle через `growhelper_start_cycle`;
@@ -536,7 +536,7 @@ GrowHelper workflow → raw Kanban task/run → Hermes worker session
 
 ## 15. Минимальный acceptance test
 
-1. Меню показывает семь согласованных команд; `/addplant` создаёт onboarding Plant только после валидного аватара не более 500 КБ.
+1. Меню показывает восемь согласованных команд; `/feedback` возвращает контакт разработчика, а `/addplant` создаёт onboarding Plant только после валидного аватара не более 500 КБ.
 2. `/plant` показывает только Plants владельца, переключает binding и возвращает аватар; `/delplant` удаляет только выбранный Plant владельца и только после подтверждения.
 3. Два Telegram-пользователя одновременно создают Cycles только на своих boards; routing не зависит от current board.
 4. Photo Cycle идёт `vision → plant-state → advisor`; vision не пишет diagnosis/recommendation.

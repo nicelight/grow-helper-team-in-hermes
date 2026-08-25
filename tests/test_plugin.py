@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import sys
@@ -207,6 +208,12 @@ class PluginTests(unittest.TestCase):
             result = json.loads(tools._handle_request_change({"text": "Добавьте новый отчёт"}))
         self.assertTrue(result["ok"])
         self.assertEqual(send.call_args.kwargs["chat_id"], "900")
+
+    def test_feedback_returns_developer_contact(self) -> None:
+        self.assertEqual(
+            asyncio.run(commands._handle_feedback_command("ignored")),
+            "Не стесняйтесь написать разработчику — @dyingseed",
+        )
 
     def test_confirmed_specimen_roster_is_written_to_baseline(self) -> None:
         unconfirmed = json.loads(tools._handle_plants({
