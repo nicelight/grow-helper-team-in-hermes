@@ -6,8 +6,10 @@ does not maintain another application database.
 """
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
+import re
 import sys
 import uuid
 from pathlib import Path
@@ -26,6 +28,17 @@ from growhelper_monitor import hermes_adapter as hermes  # noqa: E402
 from growhelper_monitor import telegram_client as telegram  # noqa: E402
 
 router = APIRouter()
+
+_SKILL_REVIEW_PREFIX = "Review the conversation above and update the skill library"
+_SKILL_REVIEW_LABEL = (
+    "Автоматическая проверка диалога для улучшения внутренних user-oriented skills."
+)
+_MULTIMODAL_TEXT_RE = re.compile(
+    r"^\[\{'type': 'text', 'text': (?P<text>.+?)\}, "
+    r"\{'type': 'image_url'",
+    re.DOTALL,
+)
+_IMAGE_ATTACHMENT_RE = re.compile(r"\[Image attached at:\s*(?P<path>/[^\]\r\n]+)\]")
 
 
 class RecommendationBody(BaseModel):
@@ -50,6 +63,66 @@ def _json_safe(value: Any) -> Any:
     if isinstance(value, (list, tuple, set)):
         return [_json_safe(item) for item in value]
     return value
+
+
+def _compact_image_payload(text: str) -> str:
+    if "data:image/" not in text or ";base64," not in text:
+        return text
+
+    match = _MULTIMODAL_TEXT_RE.search(text)
+    visible = ""
+    if match:
+        try:
+            parsed = ast.literal_eval(match.group("text"))
+        except (SyntaxError, ValueError):
+            parsed = ""
+        if isinstance(parsed, str):
+            visible = parsed
+
+    source = visible or text
+    paths = list(dict.fromkeys(
+        match.group("path").strip()
+        for match in _IMAGE_ATTACHMENT_RE.finditer(source)
+    ))
+    caption = _IMAGE_ATTACHMENT_RE.sub("", visible).strip()
+    caption = re.sub(r"\n{3,}", "\n\n", caption)
+
+    parts = [caption] if caption else []
+    if paths:
+        parts.append("📷 Изображения:\n" + "\n".join(f"• {path}" for path in paths))
+    else:
+        parts.append("📷 Изображение")
+    return "\n\n".join(parts)
+
+
+def _dashboard_activity(activity: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    review_result_expected = False
+    for row in activity:
+        item = dict(row)
+        text = str(item.get("text") or "")
+        if (
+            item.get("kind") == "operator_message"
+            and text.lstrip().startswith(_SKILL_REVIEW_PREFIX)
+        ):
+            item["text"] = _SKILL_REVIEW_LABEL
+            item["background_review"] = "command"
+            review_result_expected = True
+        elif review_result_expected and item.get("kind") == "growhelper_reply":
+            item["background_review"] = "result"
+            review_result_expected = False
+        else:
+            item["text"] = _compact_image_payload(text)
+            review_result_expected = False
+        rows.append(item)
+    return rows
+
+
+def _dashboard_plant_summary(plant: dict[str, Any]) -> dict[str, Any]:
+    summary = core.compact_plant_summary(plant)
+    if isinstance(summary.get("last_activity"), dict):
+        summary["last_activity"] = _dashboard_activity([summary["last_activity"]])[0]
+    return summary
 
 
 def _cycle_ids(activity: list[dict[str, Any]], active: str, limit: int) -> list[str]:
@@ -102,7 +175,7 @@ async def health() -> dict[str, Any]:
 async def plants() -> dict[str, Any]:
     rows = []
     for plant in core.list_plants():
-        summary = core.compact_plant_summary(plant)
+        summary = _dashboard_plant_summary(plant)
         active = str(plant.get("active_cycle_id") or "")
         cycle = None
         if active:
@@ -123,6 +196,7 @@ async def plant_detail(
 ) -> dict[str, Any]:
     plant = _plant_or_404(plant_id)
     activity = core.read_activity(plant_id, limit=activity_limit)
+    dashboard_activity = _dashboard_activity(activity)
     ids = _cycle_ids(activity, str(plant.get("active_cycle_id") or ""), cycle_limit)
     cycles = []
     for cycle_id in ids:
@@ -130,8 +204,8 @@ async def plant_detail(
             cycle = hermes.cycle_snapshot(plant["board_slug"], cycle_id)
         except Exception as exc:
             cycle = {"cycle_id": cycle_id, "board_slug": plant["board_slug"], "status": "unavailable", "nodes": [], "edges": [], "error": str(exc)}
-        cycle["operator_input"] = _input_for(activity, cycle_id)
-        cycle["publication"] = _publication_for(activity, cycle_id)
+        cycle["operator_input"] = _input_for(dashboard_activity, cycle_id)
+        cycle["publication"] = _publication_for(dashboard_activity, cycle_id)
         cycles.append(cycle)
 
     overview = {
@@ -142,9 +216,9 @@ async def plant_detail(
         "journal": core.read_journal(plant, limit_files=30),
     }
     return _json_safe({
-        "plant": core.compact_plant_summary(plant),
+        "plant": _dashboard_plant_summary(plant),
         "overview": overview,
-        "activity": activity,
+        "activity": dashboard_activity,
         "cycles": cycles,
         "media": core.list_media(plant, limit=500),
         "dataset": core.read_dataset(plant, limit=1000),
@@ -156,7 +230,7 @@ async def plant_detail(
 @router.get("/plants/{plant_id}/cycles/{cycle_id}")
 async def cycle_detail(plant_id: str, cycle_id: str) -> dict[str, Any]:
     plant = _plant_or_404(plant_id)
-    activity = core.read_activity(plant_id, limit=5000)
+    activity = _dashboard_activity(core.read_activity(plant_id, limit=5000))
     cycle = hermes.cycle_snapshot(plant["board_slug"], cycle_id)
     cycle["operator_input"] = _input_for(activity, cycle_id)
     cycle["publication"] = _publication_for(activity, cycle_id)
@@ -253,4 +327,3 @@ async def recommendation(plant_id: str, body: RecommendationBody) -> dict[str, A
         if delivery != "sent":
             raise HTTPException(status_code=502, detail={"error": error, "activity": activity})
         return {"ok": True, "duplicate": False, "activity": activity}
-

@@ -93,6 +93,61 @@ class DashboardRecommendationTests(unittest.TestCase):
                 self.assertEqual(raised.exception.status_code, 409)
         send.assert_called_once()
 
+    def test_plant_detail_compacts_inline_image_payload(self) -> None:
+        payload = (
+            "[{'type': 'text', 'text': 'What do you see in this image?\\n\\n"
+            "[Image attached at: /tmp/cache/images/img_one.jpg]\\n"
+            "[Image attached at: /tmp/cache/images/img_two.jpg]'}, "
+            "{'type': 'image_url', 'image_url': {'url': "
+            "'data:image/jpeg;base64,AAAA'}}]"
+        )
+        core.append_activity(self.plant["plant_id"], {
+            "kind": "operator_message", "cycle_id": "t_photo", "message_id": "42",
+            "session_id": "s_1", "text": payload, "media": [],
+            "delivery": "received", "phase": "direct",
+        })
+
+        detail = asyncio.run(plugin_api.plant_detail(
+            self.plant["plant_id"], cycle_limit=12, activity_limit=500,
+        ))
+
+        shown = detail["activity"][0]["text"]
+        self.assertEqual(shown, (
+            "What do you see in this image?\n\n"
+            "📷 Изображения:\n"
+            "• /tmp/cache/images/img_one.jpg\n"
+            "• /tmp/cache/images/img_two.jpg"
+        ))
+        self.assertNotIn("base64", shown)
+        self.assertNotIn("base64", str(detail))
+        self.assertEqual(detail["cycles"][0]["operator_input"]["text"], shown)
+        self.assertEqual(core.read_activity(self.plant["plant_id"])[0]["text"], payload)
+
+        plants = asyncio.run(plugin_api.plants())
+        self.assertEqual(plants["plants"][0]["last_activity"]["text"], shown)
+
+    def test_plant_detail_marks_background_review_pair(self) -> None:
+        prompt = plugin_api._SKILL_REVIEW_PREFIX + ". Be ACTIVE."
+        result = "Updated growhelper-plant-gateway."
+        for kind, text in (("operator_message", prompt), ("growhelper_reply", result)):
+            core.append_activity(self.plant["plant_id"], {
+                "kind": kind, "cycle_id": None, "message_id": "42" if kind == "operator_message" else "",
+                "session_id": "s_1", "text": text, "media": [],
+                "delivery": "received" if kind == "operator_message" else "unknown",
+                "phase": "direct" if kind == "operator_message" else "immediate",
+            })
+
+        detail = asyncio.run(plugin_api.plant_detail(
+            self.plant["plant_id"], cycle_limit=12, activity_limit=500,
+        ))
+
+        command, review_result = detail["activity"]
+        self.assertEqual(command["background_review"], "command")
+        self.assertEqual(command["text"], plugin_api._SKILL_REVIEW_LABEL)
+        self.assertEqual(review_result["background_review"], "result")
+        self.assertEqual(review_result["text"], result)
+        self.assertEqual(core.read_activity(self.plant["plant_id"])[0]["text"], prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

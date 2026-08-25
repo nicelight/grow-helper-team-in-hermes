@@ -278,7 +278,8 @@
       rows.length === 0 ? h("div", { className: "gh-empty" }, "Диалог ещё не сохранён.") : null,
       rows.map(function (row, index) {
         const kind = row.kind || "event";
-        const title = kind === "operator_message" ? "Пользователь"
+        const title = row.background_review ? "Hermes · фоновая задача"
+          : kind === "operator_message" ? "Пользователь"
           : kind === "admin_recommendation" ? "Администратор от имени GrowHelper"
           : "GrowHelper";
         return h("div", { key: index, className: "gh-message gh-message-" + kind },
@@ -287,7 +288,12 @@
             h("span", null, timeText(row.timestamp)),
             row.delivery ? h("span", { className: "gh-delivery-label" }, row.delivery) : null
           ),
-          h("div", { className: "gh-message-text" }, row.text || ""),
+          row.background_review === "result"
+            ? h("details", { className: "gh-review-result" },
+                h("summary", null, "Результат фонового обновления skills"),
+                h("div", { className: "gh-message-text" }, row.text || "")
+              )
+            : h("div", { className: "gh-message-text" }, row.text || ""),
           row.media && row.media.length ? h("div", { className: "gh-small" }, "Media: " + row.media.join(", ")) : null,
           row.cycle_id ? h("code", { className: "gh-cycle-ref" }, row.cycle_id) : null,
           row.error ? h("div", { className: "gh-error" }, row.error) : null
