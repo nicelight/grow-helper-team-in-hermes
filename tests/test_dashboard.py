@@ -120,11 +120,51 @@ class DashboardRecommendationTests(unittest.TestCase):
         ))
         self.assertNotIn("base64", shown)
         self.assertNotIn("base64", str(detail))
+        self.assertEqual(detail["activity"][0]["image_attachments"], [
+            "/tmp/cache/images/img_one.jpg",
+            "/tmp/cache/images/img_two.jpg",
+        ])
         self.assertEqual(detail["cycles"][0]["operator_input"]["text"], shown)
         self.assertEqual(core.read_activity(self.plant["plant_id"])[0]["text"], payload)
 
         plants = asyncio.run(plugin_api.plants())
         self.assertEqual(plants["plants"][0]["last_activity"]["text"], shown)
+
+    def test_image_attachment_path_is_cache_scoped_and_plant_referenced(self) -> None:
+        hermes_home = Path(self.tmp.name) / ".hermes"
+        cache = hermes_home / "profiles" / "grow-helper" / "cache" / "images"
+        cache.mkdir(parents=True)
+        attached = cache / "attached.jpg"
+        unreferenced = cache / "unreferenced.jpg"
+        outside = Path(self.tmp.name) / "outside.jpg"
+        for path in (attached, unreferenced, outside):
+            path.write_bytes(b"image")
+        os.environ["HERMES_BASE_HOME"] = str(hermes_home)
+
+        core.append_activity(self.plant["plant_id"], {
+            "kind": "operator_message", "cycle_id": None, "message_id": "42",
+            "session_id": "s_1",
+            "text": (
+                f"[Image attached at: {attached}]\n"
+                f"[Image attached at: {outside}]"
+            ),
+            "media": [], "delivery": "received", "phase": "direct",
+        })
+
+        self.assertEqual(
+            plugin_api._secure_image_attachment_path(
+                self.plant["plant_id"], str(attached),
+            ),
+            attached.resolve(),
+        )
+        with self.assertRaises(PermissionError):
+            plugin_api._secure_image_attachment_path(
+                self.plant["plant_id"], str(unreferenced),
+            )
+        with self.assertRaises(PermissionError):
+            plugin_api._secure_image_attachment_path(
+                self.plant["plant_id"], str(outside),
+            )
 
     def test_plant_detail_marks_background_review_pair(self) -> None:
         prompt = plugin_api._SKILL_REVIEW_PREFIX + ". Be ACTIVE."

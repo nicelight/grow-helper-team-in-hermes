@@ -9,6 +9,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+import os
 import re
 import sys
 import uuid
@@ -39,6 +40,10 @@ _MULTIMODAL_TEXT_RE = re.compile(
     re.DOTALL,
 )
 _IMAGE_ATTACHMENT_RE = re.compile(r"\[Image attached at:\s*(?P<path>/[^\]\r\n]+)\]")
+_IMAGE_EXTENSIONS = {
+    ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff",
+    ".heic", ".heif",
+}
 
 
 class RecommendationBody(BaseModel):
@@ -95,6 +100,46 @@ def _compact_image_payload(text: str) -> str:
     return "\n\n".join(parts)
 
 
+def _image_attachment_paths(text: str) -> list[str]:
+    source = text
+    if "data:image/" in text and ";base64," in text:
+        match = _MULTIMODAL_TEXT_RE.search(text)
+        if match:
+            try:
+                parsed = ast.literal_eval(match.group("text"))
+            except (SyntaxError, ValueError):
+                parsed = ""
+            if isinstance(parsed, str):
+                source = parsed
+    return list(dict.fromkeys(
+        match.group("path").strip()
+        for match in _IMAGE_ATTACHMENT_RE.finditer(source)
+    ))
+
+
+def _secure_image_attachment_path(plant_id: str, raw_path: str) -> Path:
+    root = (
+        Path(os.getenv("HERMES_BASE_HOME", "~/.hermes")).expanduser()
+        / "profiles" / "grow-helper" / "cache" / "images"
+    ).resolve()
+    target = Path(raw_path).expanduser().resolve(strict=True)
+    try:
+        target.relative_to(root)
+    except ValueError as exc:
+        raise PermissionError("Only GrowHelper image-cache files may be served") from exc
+    if target.suffix.lower() not in _IMAGE_EXTENSIONS:
+        raise PermissionError("Only image attachments may be served")
+
+    referenced = {
+        str(Path(path).expanduser().resolve())
+        for row in core.read_activity(plant_id, limit=5000)
+        for path in _image_attachment_paths(str(row.get("text") or ""))
+    }
+    if str(target) not in referenced:
+        raise PermissionError("Image attachment is not referenced by this Plant")
+    return target
+
+
 def _dashboard_activity(activity: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     review_result_expected = False
@@ -113,6 +158,9 @@ def _dashboard_activity(activity: list[dict[str, Any]]) -> list[dict[str, Any]]:
             review_result_expected = False
         else:
             item["text"] = _compact_image_payload(text)
+            attachments = _image_attachment_paths(text)
+            if attachments:
+                item["image_attachments"] = attachments
             review_result_expected = False
         rows.append(item)
     return rows
@@ -247,7 +295,11 @@ async def raw_board(plant_id: str) -> dict[str, Any]:
 async def media(plant_id: str, path: str = Query(..., min_length=1)):
     plant = _plant_or_404(plant_id)
     try:
-        target = core.secure_media_path(plant, path)
+        target = (
+            _secure_image_attachment_path(plant_id, path)
+            if Path(path).is_absolute()
+            else core.secure_media_path(plant, path)
+        )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except FileNotFoundError as exc:

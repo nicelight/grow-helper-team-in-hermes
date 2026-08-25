@@ -272,6 +272,35 @@
     );
   }
 
+  function linkedMessageText(row, plantId) {
+    let parts = [String(row.text || "")];
+    (row.image_attachments || []).forEach(function (path, attachmentIndex) {
+      const next = [];
+      parts.forEach(function (part, partIndex) {
+        if (typeof part !== "string") {
+          next.push(part);
+          return;
+        }
+        const fragments = part.split(path);
+        fragments.forEach(function (fragment, fragmentIndex) {
+          if (fragment) next.push(fragment);
+          if (fragmentIndex < fragments.length - 1) {
+            const url = API + "/plants/" + encodeURIComponent(plantId) + "/media?path=" + encodeURIComponent(path);
+            next.push(h("a", {
+              key: path + "-" + attachmentIndex + "-" + partIndex + "-" + fragmentIndex,
+              href: url,
+              target: "_blank",
+              rel: "noreferrer",
+              className: "gh-inline-media-link"
+            }, path));
+          }
+        });
+      });
+      parts = next;
+    });
+    return h("div", { className: "gh-message-text" }, parts);
+  }
+
   function Conversation(props) {
     const plantId = props.detail.plant.plant_id;
     const rows = props.detail.activity || [];
@@ -294,7 +323,7 @@
                 h("summary", null, "Результат фонового обновления skills"),
                 h("div", { className: "gh-message-text" }, row.text || "")
               )
-            : h("div", { className: "gh-message-text" }, row.text || ""),
+            : linkedMessageText(row, plantId),
           row.media && row.media.length ? h("div", { className: "gh-small gh-media-links" },
             "Media: ",
             row.media.map(function (media, mediaIndex) {
