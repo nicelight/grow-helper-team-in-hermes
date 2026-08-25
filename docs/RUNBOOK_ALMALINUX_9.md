@@ -274,8 +274,8 @@ admin/user split. Пользователи из этого списка полу
 Обычный пользователь продолжает свободно общаться с GrowHelper, но не получает
 `/model`, `/update`, `/kanban` и другие административные slash-команды. Базовые
 `/help` и `/whoami` Hermes оставляет доступными при ручном вводе. Видимое меню
-глобально ограничивается шестью командами: `/addplant`, `/plant`, `/compress`,
-`/new`, `/status`, `/context`.
+глобально ограничивается семью командами: `/addplant`, `/plant`, `/delplant`,
+`/compress`, `/new`, `/status`, `/context`.
 
 У specialist `.env` не должно быть Telegram credentials. Installer удаляет messaging keys из них.
 
@@ -429,7 +429,7 @@ deploy/traefik/growhelper-dynamic.yml.example
 
 ### 13.1 Inception и Plant creation
 
-1. Убедитесь, что меню содержит ровно шесть согласованных команд.
+1. Убедитесь, что меню содержит ровно семь согласованных команд.
 2. Выполните `/addplant`; до фотографии бот должен только просить аватар.
 3. Загрузите реальную фотографию и убедитесь, что Plant сразу создан в `onboarding`.
 4. Задайте имя либо оставьте предложенное и пройдите Inception: identity, starting state, environment, desired result, success criteria, constraints.
@@ -444,6 +444,7 @@ find "$HOME/grow-helper/plants" -path '*/photos/avatar.jpg' -printf '%s %p\n'
 
 7. Создайте второй Plant, выполните `/plant`, выберите первый кнопкой и проверьте возврат его аватара.
 8. В Dashboard → GrowHelper должны появиться оба Plants.
+9. Выполните `/delplant`, отмените удаление и убедитесь, что Plant сохранён; повторите команду, подтвердите и проверьте удаление registry, workspace и Kanban board.
 
 Это ручной Telegram E2E. Автоматические тесты проверяют только registry и mocked Bot API payload; без наблюдаемого сообщения в Telegram нельзя заявлять успешный E2E.
 
@@ -755,7 +756,7 @@ Installer создаёт `.bak-<timestamp>` рядом с изменяемыми
 ## 24. Acceptance criteria перед пилотом
 
 - [ ] `/addplant` создаёт onboarding Plant после валидного аватара не более 500 КБ.
-- [ ] Telegram-меню содержит шесть согласованных команд; `/plant` переключает контекст и возвращает аватар.
+- [ ] Telegram-меню содержит семь согласованных команд; `/plant` переключает контекст, а `/delplant` удаляет Plant только после подтверждения.
 - [ ] Подтверждение Campaign переводит Plant в `active`.
 - [ ] На Plant создаются отдельные workspace и Kanban board.
 - [ ] Measurement Cycle запускает параллельный state/advisor flow.

@@ -49,6 +49,8 @@ ADDPLANT_PHOTO_REMINDER = (
     "Нужна фотография для аватарки Plant. Пришлите изображение — до этого "
     "создание не продолжится."
 )
+DELPLANT_CONFIRM_BUTTON = "Да, удалить Plant"
+DELPLANT_CANCEL_BUTTON = "Отмена"
 PLANT_CONTEXT_FILES = (
     "campaign.md", "baseline.md", "current-state.md", "history-summary.md",
 )
@@ -110,6 +112,15 @@ def _pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> Optional[dict[str
 
     text = state.user_message.strip()
     if not text.startswith("/"):
+        pending_delete = core.pending_delplant(
+            platform=platform, chat_id=state.chat_id, user_id=state.user_id
+        )
+        if pending_delete:
+            if text == DELPLANT_CONFIRM_BUTTON:
+                return {"action": "rewrite", "text": "/delplant __confirm__"}
+            if text == DELPLANT_CANCEL_BUTTON:
+                return {"action": "rewrite", "text": "/delplant __cancel__"}
+
         pending = core.pending_addplant(
             platform=platform, chat_id=state.chat_id, user_id=state.user_id
         )
@@ -124,6 +135,12 @@ def _pre_gateway_dispatch(event: Any = None, **kwargs: Any) -> Optional[dict[str
             ):
                 if text == f"🌱 {plant.get('nickname', '')}":
                     return {"action": "rewrite", "text": f"/plant {plant['plant_id']}"}
+        if text.startswith("Удалить 🌱 "):
+            for plant in core.list_plants(
+                platform=platform, chat_id=state.chat_id, user_id=state.user_id,
+            ):
+                if text == f"Удалить 🌱 {plant.get('nickname', '')}":
+                    return {"action": "rewrite", "text": f"/delplant {plant['plant_id']}"}
     return None
 
 
@@ -607,6 +624,116 @@ def _handle_plant_sync(raw_args: str) -> Optional[str]:
 
 async def _handle_plant_command(raw_args: str) -> Optional[str]:
     return await asyncio.to_thread(_handle_plant_sync, raw_args)
+
+
+def _handle_delplant_sync(raw_args: str) -> Optional[str]:
+    state = _command_state()
+    if state.platform.lower() != "telegram" or not state.chat_id:
+        return "Команда /delplant доступна в Telegram."
+    mode = str(raw_args or "").strip()
+
+    if not mode:
+        core.clear_pending_addplant(
+            platform=state.platform, chat_id=state.chat_id, user_id=state.user_id
+        )
+        core.clear_pending_delplant(
+            platform=state.platform, chat_id=state.chat_id, user_id=state.user_id
+        )
+        plants = core.list_plants(
+            platform=state.platform, chat_id=state.chat_id, user_id=state.user_id,
+        )
+        if not plants:
+            return "У вас пока нет Plant для удаления."
+        keyboard = [[f"Удалить 🌱 {plant['nickname']}"] for plant in plants]
+        result, fallback = _send_command_text(
+            state, "Выберите Plant для удаления:", reply_keyboard=keyboard
+        )
+        try:
+            active = core.resolve_plant(
+                platform=state.platform, chat_id=state.chat_id, user_id=state.user_id
+            )
+            _log_direct_exchange(
+                active, state, incoming_text=state.user_message or "/delplant",
+                outgoing_text="Выберите Plant для удаления:", result=result,
+            )
+        except (KeyError, ValueError):
+            pass
+        return fallback
+
+    if mode == "__cancel__":
+        pending = core.pending_delplant(
+            platform=state.platform, chat_id=state.chat_id, user_id=state.user_id
+        )
+        plant = core.get_plant(str(pending.get("plant_id") or ""))
+        core.clear_pending_delplant(
+            platform=state.platform, chat_id=state.chat_id, user_id=state.user_id
+        )
+        result, fallback = _send_command_text(
+            state, "Удаление отменено.", remove_keyboard=True
+        )
+        if plant:
+            _log_direct_exchange(
+                plant, state, incoming_text=state.user_message,
+                outgoing_text="Удаление отменено.", result=result,
+            )
+        return fallback
+
+    if mode == "__confirm__":
+        pending = core.pending_delplant(
+            platform=state.platform, chat_id=state.chat_id, user_id=state.user_id
+        )
+        plant_id = str(pending.get("plant_id") or "")
+        if not plant_id:
+            _result, fallback = _send_command_text(
+                state, "Нет Plant, ожидающего подтверждения удаления.",
+                remove_keyboard=True,
+            )
+            return fallback
+        try:
+            deleted = core.delete_plant(
+                plant_id=plant_id, platform=state.platform, chat_id=state.chat_id,
+                user_id=state.user_id, board_remover=hermes.delete_board,
+            )
+        except (KeyError, PermissionError, ValueError, RuntimeError, OSError):
+            log.exception("Plant deletion failed for %s", plant_id)
+            _result, fallback = _send_command_text(
+                state, "Не удалось удалить Plant. Попробуйте подтвердить ещё раз.",
+                remove_keyboard=True,
+            )
+            return fallback
+        _result, fallback = _send_command_text(
+            state, f"Plant «{deleted['nickname']}» удалён.", remove_keyboard=True
+        )
+        return fallback
+
+    try:
+        plant = core.resolve_plant(
+            plant_id=mode, platform=state.platform, chat_id=state.chat_id,
+            user_id=state.user_id,
+        )
+        core.set_pending_delplant(
+            plant_id=mode, platform=state.platform, chat_id=state.chat_id,
+            user_id=state.user_id,
+        )
+    except (KeyError, PermissionError):
+        return "Не удалось выбрать этот Plant. Откройте список через /delplant."
+    prompt = (
+        f"Точно удалить Plant «{plant['nickname']}»? Будут безвозвратно удалены "
+        "его история, фотографии и задачи."
+    )
+    result, fallback = _send_command_text(
+        state, prompt,
+        reply_keyboard=[[DELPLANT_CONFIRM_BUTTON], [DELPLANT_CANCEL_BUTTON]],
+    )
+    _log_direct_exchange(
+        plant, state, incoming_text=state.user_message or "/delplant",
+        outgoing_text=prompt, result=result,
+    )
+    return fallback
+
+
+async def _handle_delplant_command(raw_args: str) -> Optional[str]:
+    return await asyncio.to_thread(_handle_delplant_sync, raw_args)
 
 
 def _event_key(state: TurnState, message: str) -> str:
@@ -1261,6 +1388,10 @@ def register(ctx: Any) -> None:
     ctx.register_command(
         "plant", handler=_handle_plant_command,
         description="Выбрать Plant",
+    )
+    ctx.register_command(
+        "delplant", handler=_handle_delplant_command,
+        description="Удалить Plant",
     )
     ctx.register_hook("pre_tool_call", _pre_tool_call)
     ctx.register_hook("pre_gateway_dispatch", _pre_gateway_dispatch)

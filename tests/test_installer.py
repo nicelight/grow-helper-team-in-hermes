@@ -86,11 +86,11 @@ raise SystemExit(2)
                     self.assertIn("GROWHELPER_TELEGRAM_ADMIN_USERS=100,200", env)
                     extra = config["gateway"]["platforms"]["telegram"]["extra"]
                     self.assertEqual(extra["allow_admin_from"], ["100", "200"])
-                    commands = ["addplant", "plant", "compress", "new", "status", "context"]
+                    commands = ["addplant", "plant", "delplant", "compress", "new", "status", "context"]
                     self.assertEqual(extra["user_allowed_commands"], commands)
                     self.assertEqual(
                         config["platforms"]["telegram"]["extra"]["command_menu"],
-                        {"max_commands": 6, "priority_mode": "replace", "priority": commands},
+                        {"max_commands": 7, "priority_mode": "replace", "priority": commands},
                     )
                     self.assertEqual(config["display"]["tool_progress"], "log")
                 else:

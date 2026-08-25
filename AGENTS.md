@@ -73,8 +73,8 @@ Do not add services, abstractions, databases, queues, or agent roles only becaus
 - A Plant is one physically or territorially separate cultivation/nutrition
   contour, such as a bed, windowsill or hydroponic setup. It may contain
   different species.
-- The visible Telegram menu is exactly `/addplant`, `/plant`, `/compress`,
-  `/new`, `/status`, `/context`. Do not add `/help`; Hermes may still accept
+- The visible Telegram menu is exactly `/addplant`, `/plant`, `/delplant`,
+  `/compress`, `/new`, `/status`, `/context`. Do not add `/help`; Hermes may still accept
   `/help` and `/whoami` when typed manually.
 - `/addplant` waits for a valid avatar before creating an onboarding Plant.
   Persist only `photos/avatar.jpg`, JPEG, at most `500_000` bytes; do not copy
@@ -82,6 +82,8 @@ Do not add services, abstractions, databases, queues, or agent roles only becaus
 - `/plant` uses a one-time reply keyboard containing only the current owner's
   Plants. Selection changes the active binding and returns the Plant avatar,
   or a text fallback when no avatar exists.
+- `/delplant` uses owner-only selection and explicit confirmation, then removes
+  the Plant registry entry, workspace and Kanban board.
 - `pre_gateway_dispatch` may capture data and rewrite deterministic commands,
   but must not write state or send messages before Hermes authorization.
 - Keep cultivation-useful toolsets available. Requests to change GrowHelper
@@ -167,7 +169,7 @@ Do not invoke `reviewer`, `task-followup` or `data-curator` in every Cycle. Do n
 
 ## Plugin responsibilities
 `grow-helper-monitor` is a glue layer, not a new backend.
-It may implement `/addplant` and `/plant`, connect Telegram turns to Plants/Cycles, maintain `activity.jsonl`, create root Cycles through `growhelper_start_cycle`, publish final replies through `growhelper_publish_reply`, enforce idempotency, validate specialist metadata, expose Dashboard read APIs, and send admin recommendations or fixed-owner change requests.
+It may implement `/addplant`, `/plant` and `/delplant`, connect Telegram turns to Plants/Cycles, maintain `activity.jsonl`, create root Cycles through `growhelper_start_cycle`, publish final replies through `growhelper_publish_reply`, enforce idempotency, validate specialist metadata, expose Dashboard read APIs, and send admin recommendations or fixed-owner change requests.
 It must not make agronomic decisions, duplicate Kanban, implement a parallel scheduler, become a domain backend, or control the user's real-world actions.
 
 ## Development policy

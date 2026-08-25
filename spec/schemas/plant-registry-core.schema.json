@@ -88,7 +88,8 @@
         "user_id": { "type": "string", "maxLength": 80 },
         "active_plant_id": { "$ref": "#/$defs/plantId" },
         "updated_at": { "type": "string", "format": "date-time" },
-        "pending_addplant": { "$ref": "#/$defs/pendingAddplant" }
+        "pending_addplant": { "$ref": "#/$defs/pendingAddplant" },
+        "pending_delplant": { "$ref": "#/$defs/pendingDelplant" }
       }
     },
     "pendingAddplant": {
@@ -100,6 +101,17 @@
         "user_id": { "type": "string", "maxLength": 80 },
         "requested_at": { "type": "string", "format": "date-time" },
         "command_message_id": { "type": "string" }
+      }
+    },
+    "pendingDelplant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stage", "plant_id", "user_id", "requested_at"],
+      "properties": {
+        "stage": { "const": "awaiting_confirmation" },
+        "plant_id": { "$ref": "#/$defs/plantId" },
+        "user_id": { "type": "string", "maxLength": 80 },
+        "requested_at": { "type": "string", "format": "date-time" }
       }
     }
   },

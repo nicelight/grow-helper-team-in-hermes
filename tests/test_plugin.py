@@ -137,6 +137,70 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(active["plant_id"], second["plant_id"])
         send.assert_called_once()
 
+    def test_delplant_lists_only_owner_and_requires_confirmation(self) -> None:
+        core.create_plant(
+            nickname="Чужой", owner_platform="telegram", owner_chat_id="200",
+            owner_user_id="200", board_creator=lambda **kwargs: None,
+        )
+        plugin._INBOUND.set(plugin.TurnState(
+            platform="telegram", user_id="100", chat_id="100", message_id="81",
+            user_message="/delplant",
+        ))
+        with patch.object(plugin.telegram, "send_text", return_value={"message_id": "504"}) as send:
+            self.assertIsNone(plugin._handle_delplant_sync(""))
+        keyboard = send.call_args.kwargs["reply_keyboard"]
+        self.assertEqual(keyboard, [["Удалить 🌱 Милок"]])
+
+        source = SimpleNamespace(
+            platform=SimpleNamespace(value="telegram"), chat_id="100",
+            thread_id="", user_id="100",
+        )
+        selected = SimpleNamespace(
+            source=source, user_id="100", message_id="82",
+            text="Удалить 🌱 Милок", media_urls=[],
+        )
+        self.assertEqual(
+            plugin._pre_gateway_dispatch(event=selected),
+            {"action": "rewrite", "text": f"/delplant {self.plant['plant_id']}"},
+        )
+        with patch.object(plugin.telegram, "send_text", return_value={"message_id": "505"}):
+            self.assertIsNone(plugin._handle_delplant_sync(self.plant["plant_id"]))
+        self.assertIsNotNone(core.get_plant(self.plant["plant_id"]))
+
+        cancelled = SimpleNamespace(
+            source=source, user_id="100", message_id="83",
+            text=plugin.DELPLANT_CANCEL_BUTTON, media_urls=[],
+        )
+        self.assertEqual(
+            plugin._pre_gateway_dispatch(event=cancelled),
+            {"action": "rewrite", "text": "/delplant __cancel__"},
+        )
+        with patch.object(plugin.telegram, "send_text", return_value={"message_id": "506"}):
+            self.assertIsNone(plugin._handle_delplant_sync("__cancel__"))
+        self.assertIsNotNone(core.get_plant(self.plant["plant_id"]))
+
+        plugin._INBOUND.set(plugin.TurnState(
+            platform="telegram", user_id="100", chat_id="100", message_id="84",
+            user_message="Удалить 🌱 Милок",
+        ))
+        with patch.object(plugin.telegram, "send_text", return_value={"message_id": "507"}):
+            self.assertIsNone(plugin._handle_delplant_sync(self.plant["plant_id"]))
+        confirmed = SimpleNamespace(
+            source=source, user_id="100", message_id="85",
+            text=plugin.DELPLANT_CONFIRM_BUTTON, media_urls=[],
+        )
+        self.assertEqual(
+            plugin._pre_gateway_dispatch(event=confirmed),
+            {"action": "rewrite", "text": "/delplant __confirm__"},
+        )
+        workspace = Path(self.plant["workspace_path"])
+        with patch.object(plugin.hermes, "delete_board", return_value={}) as delete_board, \
+             patch.object(plugin.telegram, "send_text", return_value={"message_id": "508"}):
+            self.assertIsNone(plugin._handle_delplant_sync("__confirm__"))
+        delete_board.assert_called_once_with(self.plant["board_slug"])
+        self.assertIsNone(core.get_plant(self.plant["plant_id"]))
+        self.assertFalse(workspace.exists())
+
     def test_change_request_uses_first_configured_owner(self) -> None:
         os.environ["GROWHELPER_TELEGRAM_ADMIN_USERS"] = "900,901"
         with patch.object(plugin.telegram, "send_text", return_value={"message_id": "503"}) as send:

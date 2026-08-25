@@ -129,7 +129,7 @@ def check_registration(report: Report) -> None:
         if (
             expected_tools.issubset(set(ctx.tools))
             and expected_hooks.issubset(set(ctx.hooks))
-            and set(ctx.commands) == {"addplant", "plant"}
+            and set(ctx.commands) == {"addplant", "plant", "delplant"}
         ):
             report.ok(
                 "plugin registration",
@@ -211,7 +211,7 @@ def check_profile_config(report: Report, hermes_root: Path, profile: str) -> Non
         if isinstance(admins, list) and admins and all(str(item).isascii() and str(item).isdecimal() for item in admins):
             report.ok("Telegram admin split", f"admins={len(admins)}")
             commands = telegram_extra.get("user_allowed_commands")
-            expected_commands = ["addplant", "plant", "compress", "new", "status", "context"]
+            expected_commands = ["addplant", "plant", "delplant", "compress", "new", "status", "context"]
             if commands == expected_commands:
                 report.ok("Telegram regular-user commands", repr(commands))
             else:
@@ -229,12 +229,12 @@ def check_profile_config(report: Report, hermes_root: Path, profile: str) -> Non
             .get("extra", {}).get("command_menu", {})
         )
         expected_menu = {
-            "max_commands": 6,
+            "max_commands": 7,
             "priority_mode": "replace",
-            "priority": ["addplant", "plant", "compress", "new", "status", "context"],
+            "priority": ["addplant", "plant", "delplant", "compress", "new", "status", "context"],
         }
         if menu == expected_menu:
-            report.ok("Telegram command menu", "six GrowHelper commands")
+            report.ok("Telegram command menu", "seven GrowHelper commands")
         else:
             report.error("Telegram command menu", f"expected {expected_menu!r}, got {menu!r}")
 

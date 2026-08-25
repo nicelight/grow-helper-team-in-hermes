@@ -335,6 +335,7 @@ def set_pending_addplant(
                 "command_message_id": str(command_message_id or ""),
             },
         })
+        binding.pop("pending_delplant", None)
         registry["bindings"][key] = binding
         return dict(binding["pending_addplant"])
 
@@ -364,6 +365,68 @@ def clear_pending_addplant(*, platform: str, chat_id: str, user_id: str = "") ->
         if user_id and pending_user and pending_user != str(user_id):
             return
         binding.pop("pending_addplant", None)
+        binding["updated_at"] = now_iso()
+
+    mutate_registry(update)
+
+
+def set_pending_delplant(
+    *, plant_id: str, platform: str, chat_id: str, user_id: str = ""
+) -> dict[str, Any]:
+    """Remember the owner-validated Plant awaiting explicit deletion confirmation."""
+    timestamp = now_iso()
+
+    def update(registry: dict[str, Any]) -> dict[str, Any]:
+        plant = registry["plants"].get(plant_id)
+        if not isinstance(plant, dict):
+            raise KeyError(f"Plant {plant_id!r} not found")
+        if not _owner_matches(plant, platform=platform, chat_id=chat_id, user_id=user_id):
+            raise PermissionError("Plant belongs to another Telegram binding")
+        key = binding_key(platform, chat_id)
+        current = registry["bindings"].get(key)
+        binding = dict(current) if isinstance(current, dict) else {}
+        binding.update({
+            "platform": str(platform),
+            "chat_id": str(chat_id),
+            "user_id": str(user_id or ""),
+            "updated_at": timestamp,
+            "pending_delplant": {
+                "stage": "awaiting_confirmation",
+                "plant_id": plant_id,
+                "user_id": str(user_id or ""),
+                "requested_at": timestamp,
+            },
+        })
+        binding.pop("pending_addplant", None)
+        registry["bindings"][key] = binding
+        return dict(binding["pending_delplant"])
+
+    return mutate_registry(update)
+
+
+def pending_delplant(*, platform: str, chat_id: str, user_id: str = "") -> dict[str, Any]:
+    binding = get_binding(platform=platform, chat_id=chat_id)
+    pending = binding.get("pending_delplant")
+    if not isinstance(pending, dict) or pending.get("stage") != "awaiting_confirmation":
+        return {}
+    pending_user = str(pending.get("user_id") or "")
+    if user_id and pending_user and pending_user != str(user_id):
+        return {}
+    return dict(pending)
+
+
+def clear_pending_delplant(*, platform: str, chat_id: str, user_id: str = "") -> None:
+    def update(registry: dict[str, Any]) -> None:
+        binding = registry["bindings"].get(binding_key(platform, chat_id))
+        if not isinstance(binding, dict):
+            return
+        pending = binding.get("pending_delplant")
+        if not isinstance(pending, dict):
+            return
+        pending_user = str(pending.get("user_id") or "")
+        if user_id and pending_user and pending_user != str(user_id):
+            return
+        binding.pop("pending_delplant", None)
         binding["updated_at"] = now_iso()
 
     mutate_registry(update)
@@ -670,6 +733,70 @@ def create_plant(
             avatar_jpeg=avatar_jpeg,
             board_creator=board_creator,
         )
+
+
+def delete_plant(
+    *, plant_id: str, platform: str, chat_id: str, user_id: str = "",
+    board_remover: Optional[Callable[[str], Any]] = None,
+) -> dict[str, Any]:
+    """Permanently remove one owner-validated Plant, its board and workspace."""
+    ensure_layout()
+    with locked(plants_root() / ".provision.lock"):
+        plant = resolve_plant(
+            plant_id=plant_id, platform=platform, chat_id=chat_id,
+            user_id=user_id,
+        )
+        workspace = Path(str(plant.get("workspace_path") or "")).resolve()
+        expected_workspace = (plants_root() / plant_id).resolve()
+        if workspace != expected_workspace:
+            raise ValueError("Plant workspace path does not match its identity")
+        board_slug = str(plant.get("board_slug") or "")
+        if board_slug != board_slug_for(plant_id):
+            raise ValueError("Plant board slug does not match its identity")
+
+        if board_remover is not None:
+            board_remover(board_slug)
+
+        def remove(registry: dict[str, Any]) -> dict[str, Any]:
+            current = registry["plants"].get(plant_id)
+            if not isinstance(current, dict):
+                raise KeyError(f"Plant {plant_id!r} not found")
+            if not _owner_matches(
+                current, platform=platform, chat_id=chat_id, user_id=user_id
+            ):
+                raise PermissionError("Plant belongs to another Telegram binding")
+            del registry["plants"][plant_id]
+
+            for binding in registry["bindings"].values():
+                if not isinstance(binding, dict):
+                    continue
+                pending = binding.get("pending_delplant")
+                if isinstance(pending, dict) and pending.get("plant_id") == plant_id:
+                    binding.pop("pending_delplant", None)
+                if binding.get("active_plant_id") != plant_id:
+                    continue
+                candidates = [
+                    value for value in registry["plants"].values()
+                    if isinstance(value, dict) and _owner_matches(
+                        value,
+                        platform=str(binding.get("platform") or ""),
+                        chat_id=str(binding.get("chat_id") or ""),
+                        user_id=str(binding.get("user_id") or ""),
+                    )
+                ]
+                candidates.sort(
+                    key=lambda value: str(value.get("created_at") or ""), reverse=True
+                )
+                if candidates:
+                    binding["active_plant_id"] = candidates[0]["plant_id"]
+                else:
+                    binding.pop("active_plant_id", None)
+                binding["updated_at"] = now_iso()
+            return _plant_view(current)
+
+        deleted = mutate_registry(remove)
+        shutil.rmtree(workspace)
+        return deleted
 
 
 def _replace_markdown_field(path: Path, field_name: str, value: str) -> None:

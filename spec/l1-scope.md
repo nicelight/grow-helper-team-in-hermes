@@ -31,6 +31,8 @@ the same Plant-first contract.
   one active Plant, while the same owner may have multiple Plants.
 - `pending_addplant` belongs to the binding, not a Plant: the Plant does not
   exist until a valid avatar has been received and compressed.
+- `pending_delplant` belongs to the binding and names an owner-validated Plant;
+  registry, workspace and Kanban board are deleted only after explicit confirmation.
 - A persisted avatar is always `photos/avatar.jpg`, JPEG and at most `500_000`
   bytes. The original heavy upload is not copied into the Plant workspace.
 - `workspace_path` and `board_slug` are allocated at Plant creation and remain

@@ -105,6 +105,28 @@ def create_board(*, board_slug: str, name: str, description: str, workspace_path
         return {"slug": board_slug, "name": name, "default_workdir": workspace}
 
 
+def delete_board(board_slug: str) -> dict[str, Any]:
+    """Permanently delete one named Hermes Kanban board."""
+    try:
+        kb = _import_kb()
+        remove = getattr(kb, "remove_board", None)
+        if not callable(remove):
+            raise AttributeError("Hermes kanban_db.remove_board is unavailable")
+        result = remove(board_slug, archive=False)
+        return dict(result) if isinstance(result, dict) else {"slug": board_slug}
+    except Exception as python_error:
+        proc = subprocess.run(
+            [_hermes_binary(), "kanban", "boards", "rm", board_slug, "--delete"],
+            text=True, capture_output=True, timeout=60,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"Hermes board deletion failed via Python API ({python_error}) and CLI: "
+                f"{proc.stderr.strip() or proc.stdout.strip()}"
+            ) from python_error
+        return {"slug": board_slug, "action": "deleted"}
+
+
 def create_cycle_task(
     *,
     board_slug: str,

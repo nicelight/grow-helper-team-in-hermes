@@ -64,6 +64,24 @@ class CoreTests(unittest.TestCase):
             "Прелесть",
         )
 
+    def test_delete_removes_board_workspace_registry_and_selects_fallback(self) -> None:
+        first, _ = self.create("Прелесть", "100")
+        second, _ = self.create("Окно", "100")
+        workspace = Path(second["workspace_path"])
+        removed_boards = []
+
+        deleted = core.delete_plant(
+            plant_id=second["plant_id"], platform="telegram", chat_id="100",
+            user_id="100", board_remover=removed_boards.append,
+        )
+
+        self.assertEqual(deleted["plant_id"], second["plant_id"])
+        self.assertEqual(removed_boards, [second["board_slug"]])
+        self.assertFalse(workspace.exists())
+        self.assertIsNone(core.get_plant(second["plant_id"]))
+        active = core.resolve_plant(platform="telegram", chat_id="100", user_id="100")
+        self.assertEqual(active["plant_id"], first["plant_id"])
+
     def test_activity_is_append_only_and_filterable(self) -> None:
         plant, _ = self.create()
         core.append_activity(plant["plant_id"], {

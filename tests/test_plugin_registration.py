@@ -43,7 +43,7 @@ class RegistrationTests(unittest.TestCase):
             set(ctx.hooks),
             {"pre_tool_call", "pre_gateway_dispatch", "pre_llm_call", "post_llm_call"},
         )
-        self.assertEqual(set(ctx.commands), {"addplant", "plant"})
+        self.assertEqual(set(ctx.commands), {"addplant", "plant", "delplant"})
         self.assertTrue(all(tool["toolset"] == "growhelper" for tool in ctx.tools.values()))
 
 

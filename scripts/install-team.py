@@ -48,7 +48,7 @@ MESSAGING_SECRET_PREFIXES = (
     "TELEGRAM_", "DISCORD_", "SLACK_", "WHATSAPP_", "SIGNAL_", "MATRIX_",
     "FEISHU_", "DINGTALK_", "WECOM_", "WEIXIN_", "QQ_",
 )
-TELEGRAM_USER_COMMANDS = ["addplant", "plant", "compress", "new", "status", "context"]
+TELEGRAM_USER_COMMANDS = ["addplant", "plant", "delplant", "compress", "new", "status", "context"]
 
 
 class Installer:
@@ -261,7 +261,7 @@ class Installer:
                 if self.telegram_admin_users:
                     extra["allow_admin_from"] = list(self.telegram_admin_users)
             # Hermes builds the global Telegram menu from the top-level
-            # platform configuration. A six-item cap plus replace priority
+            # platform configuration. A seven-item cap plus replace priority
             # exposes exactly the GrowHelper contract without patching core.
             platforms = config.setdefault("platforms", {})
             if not isinstance(platforms, dict):
