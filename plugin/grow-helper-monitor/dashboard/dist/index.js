@@ -273,6 +273,7 @@
   }
 
   function Conversation(props) {
+    const plantId = props.detail.plant.plant_id;
     const rows = props.detail.activity || [];
     return h("div", { className: "gh-conversation" },
       rows.length === 0 ? h("div", { className: "gh-empty" }, "Диалог ещё не сохранён.") : null,
@@ -294,7 +295,16 @@
                 h("div", { className: "gh-message-text" }, row.text || "")
               )
             : h("div", { className: "gh-message-text" }, row.text || ""),
-          row.media && row.media.length ? h("div", { className: "gh-small" }, "Media: " + row.media.join(", ")) : null,
+          row.media && row.media.length ? h("div", { className: "gh-small gh-media-links" },
+            "Media: ",
+            row.media.map(function (media, mediaIndex) {
+              const url = API + "/plants/" + encodeURIComponent(plantId) + "/media?path=" + encodeURIComponent(media);
+              return h(React.Fragment, { key: media + "-" + mediaIndex },
+                mediaIndex ? ", " : null,
+                h("a", { href: url, target: "_blank", rel: "noreferrer" }, media)
+              );
+            })
+          ) : null,
           row.cycle_id ? h("code", { className: "gh-cycle-ref" }, row.cycle_id) : null,
           row.error ? h("div", { className: "gh-error" }, row.error) : null
         );
