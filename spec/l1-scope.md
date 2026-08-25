@@ -63,6 +63,24 @@ awaiting_name -> collecting_campaign -> complete
 - Explicit confirmation of the collected description advances it to
   `complete` and activates the Campaign.
 
+## Baseline specimen roster invariants
+
+- A roster is optional and remains part of one Plant's `baseline.md`; it does
+  not create separate registry entries, workspaces or Kanban boards.
+- Individual naming is limited to 1–6 specimens. For 7 or more, the user may
+  define zones or groups instead.
+- Array order is left to right and normally comes from the user's description.
+  `overview_photo` is allowed only when the user explicitly requests
+  photo-based ordering.
+- Each persisted full name receives its stable one-based ordinal suffix. The
+  agent must show the complete proposal and obtain explicit confirmation before
+  writing it through `growhelper_plants(action=set_specimens)`.
+- Unknown traits remain explicit. Confirmed ordinals are not automatically
+  changed from later descriptions or photos.
+- The roster section records `Источник порядка` as either
+  `описание пользователя` or
+  `обзорная фотография, подтверждено пользователем`.
+
 ## Activity entry invariants
 
 - `activity.jsonl` is append-only and records exact public Telegram input,

@@ -73,6 +73,10 @@ Do not add services, abstractions, databases, queues, or agent roles only becaus
 - A Plant is one physically or territorially separate cultivation/nutrition
   contour, such as a bed, windowsill or hydroponic setup. It may contain
   different species.
+- For 1–6 individually tracked specimens, persist confirmed left-to-right names
+  with stable ordinal suffixes in `baseline.md`. Use the user's description for
+  order unless they explicitly request photo-based ordering; for 7+ use
+  zones/groups.
 - The visible Telegram menu is exactly `/addplant`, `/plant`, `/delplant`,
   `/compress`, `/new`, `/status`, `/context`. Do not add `/help`; Hermes may still accept
   `/help` and `/whoami` when typed manually.

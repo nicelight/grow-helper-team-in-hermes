@@ -208,6 +208,44 @@ class PluginTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(send.call_args.kwargs["chat_id"], "900")
 
+    def test_confirmed_specimen_roster_is_written_to_baseline(self) -> None:
+        unconfirmed = json.loads(plugin._handle_plants({
+            "action": "set_specimens",
+            "specimens": ["Ромашка"],
+            "source": "user_description",
+            "confirmed": False,
+        }))
+        self.assertFalse(unconfirmed["ok"])
+
+        result = json.loads(plugin._handle_plants({
+            "action": "set_specimens",
+            "specimens": ["Красная петуния в грунте", "Неизвестная растишка"],
+            "source": "user_description",
+            "confirmed": True,
+        }))
+        self.assertTrue(result["ok"])
+        baseline = (Path(self.plant["workspace_path"]) / "baseline.md").read_text(encoding="utf-8")
+        self.assertIn("Источник порядка: описание пользователя", baseline)
+        self.assertIn("- Красная петуния в грунте 1", baseline)
+        self.assertIn("- Неизвестная растишка 2", baseline)
+
+        core.activate_plant(
+            plant_id=self.plant["plant_id"],
+            campaign_markdown="# Campaign\nStatus: active",
+            baseline_markdown="# Baseline\nStatus: partial",
+        )
+        baseline = (Path(self.plant["workspace_path"]) / "baseline.md").read_text(encoding="utf-8")
+        self.assertIn("- Неизвестная растишка 2", baseline)
+
+        with patch.object(plugin.log, "exception"):
+            rejected = json.loads(plugin._handle_plants({
+                "action": "set_specimens",
+                "specimens": [f"Растишка {index}" for index in range(7)],
+                "source": "user_description",
+                "confirmed": True,
+            }))
+        self.assertFalse(rejected["ok"])
+
     def test_done_unpublished_cycle_queues_new_event_for_recovery(self) -> None:
         core.set_active_cycle(self.plant["plant_id"], "t_stale")
         with patch.object(plugin.hermes, "cycle_snapshot", return_value={"status": "done"}), \

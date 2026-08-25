@@ -33,3 +33,14 @@ L0 constraint: Hermes Kanban is the only source of truth for workflow state.
 
 -> Why critical: a second representation would drift from Hermes tasks, runs,
 dependencies and retries.
+
+---
+
+L0 goal: keep stable references to 1–6 specimens inside one Plant.
+
+-> L1 decision: the confirmed roster and its order source are stored in the
+`baseline.md` contract defined by `spec/l1-scope.md`; no new domain entity is
+created.
+
+-> Why critical: observations and history can identify one specimen without
+splitting a shared cultivation contour into duplicate Plants or workspaces.

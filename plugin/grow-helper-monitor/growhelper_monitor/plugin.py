@@ -771,7 +771,7 @@ def _handle_plants(params: dict[str, Any], **kwargs: Any) -> str:
     try:
         action = str(params.get("action") or "list").strip().lower()
         if os.getenv("HERMES_KANBAN_TASK", "").strip() and action in {
-            "default_name", "select", "rename", "activate"
+            "default_name", "select", "rename", "activate", "set_specimens"
         }:
             return _json({
                 "ok": False,
@@ -843,6 +843,25 @@ def _handle_plants(params: dict[str, Any], **kwargs: Any) -> str:
             if state:
                 state.plant_id = plant["plant_id"]
             return _json({"ok": True, "activated": plant})
+
+        if action == "set_specimens":
+            if params.get("confirmed") is not True:
+                return _json({
+                    "ok": False,
+                    "error": "confirmed=true is required after explicit roster confirmation",
+                })
+            plant = core.resolve_plant(
+                plant_id=str(params.get("plant_id") or ""), platform=platform,
+                chat_id=chat_id, user_id=user_id, require_owner=bool(chat_id),
+            )
+            roster = core.set_specimens(
+                plant_id=plant["plant_id"], specimens=params.get("specimens"),
+                source=str(params.get("source") or ""), platform=platform,
+                chat_id=chat_id, user_id=user_id,
+            )
+            if state:
+                state.plant_id = plant["plant_id"]
+            return _json({"ok": True, "roster": roster})
 
         return _json({"ok": False, "error": f"Unknown action: {action}"})
     except Exception as exc:
@@ -1286,21 +1305,38 @@ PLANTS_SCHEMA = {
     "description": (
         "Deterministic Plant registry operations. Use list/show/select to resolve the active Plant. "
         "Use rename for the first user-supplied name and activate only after explicit Campaign confirmation. "
+        "Use set_specimens only after explicit confirmation of a 1-6 item left-to-right roster. "
         "Plant creation belongs exclusively to the /addplant command flow."
     ),
     "parameters": {
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": ["list", "default_name", "show", "select", "rename", "activate"]},
+            "action": {"type": "string", "enum": ["list", "default_name", "show", "select", "rename", "activate", "set_specimens"]},
             "plant_id": {"type": "string"},
             "nickname": {"type": "string"},
             "campaign_markdown": {"type": "string"},
             "baseline_markdown": {"type": "string"},
+            "specimens": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 6,
+                "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160,
+                    "description": "One left-to-right descriptive label without its ordinal suffix.",
+                },
+            },
+            "source": {
+                "type": "string",
+                "enum": ["user_description", "overview_photo"],
+                "description": "Use overview_photo only when the user explicitly requested photo-based ordering.",
+            },
             "confirmed": {
                 "type": "boolean",
                 "description": (
-                    "Must be true for action=activate after the user explicitly confirmed "
-                    "the Campaign draft in this chat."
+                    "Must be true after the user explicitly confirmed the Campaign draft "
+                    "or specimen roster relevant to this action."
                 ),
             }
         },

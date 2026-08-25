@@ -25,6 +25,7 @@ replace the BRIEF, `team.yaml`, Hermes Kanban contracts or implementation tests.
 Update the relevant specification in the same change when modifying:
 
 - Plant registry fields, ownership, binding or onboarding states;
+- the confirmed specimen roster contract in `baseline.md`;
 - the canonical shape or semantics of `activity.jsonl` entries;
 - stable machine-readable errors exposed by GrowHelper tools;
 - an L0 product boundary or a dependency recorded in the graph.

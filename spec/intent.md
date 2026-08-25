@@ -15,6 +15,7 @@ history, coordinates specialist Profiles and publishes one useful final reply.
 - Maintain the evidence chain `observation -> inference -> recommendation ->
   follow-up` across specialist handoffs.
 - Make Telegram creation, selection and work with the active Plant predictable.
+- Keep stable references to 1–6 individually tracked specimens inside one Plant.
 - Recover safely from retries and uncertain Telegram delivery without silently
   duplicating final replies.
 - Remain maintainable as a small Hermes-native extension.

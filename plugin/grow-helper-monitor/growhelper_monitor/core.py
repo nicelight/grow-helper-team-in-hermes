@@ -29,6 +29,12 @@ except ImportError:  # pragma: no cover - non-POSIX developer fallback.
 
 REGISTRY_SCHEMA_VERSION = 1
 MAX_AVATAR_BYTES = 500_000
+MAX_NAMED_SPECIMENS = 6
+SPECIMEN_ROSTER_HEADING = "## Растишки слева направо"
+SPECIMEN_ORDER_SOURCES = {
+    "user_description": "описание пользователя",
+    "overview_photo": "обзорная фотография, подтверждено пользователем",
+}
 PLANT_ID_RE = re.compile(r"^plt_[a-f0-9]{8,32}$")
 BOARD_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 MEDIA_EXTENSIONS = {
@@ -38,6 +44,9 @@ MEDIA_EXTENSIONS = {
 _MEDIA_PATH_RE = re.compile(
     r"(?:MEDIA:)?(?P<path>/(?:[^\s\]\[()<>\"']+?\.(?:png|jpe?g|webp|gif|bmp|tiff?|heic|heif|pdf)))",
     re.IGNORECASE,
+)
+_SPECIMEN_ROSTER_RE = re.compile(
+    rf"(?ms)^{re.escape(SPECIMEN_ROSTER_HEADING)}\s*\n.*?(?=^##\s|\Z)"
 )
 
 
@@ -839,6 +848,45 @@ def rename_plant(
     return mutate_registry(update)
 
 
+def set_specimens(
+    *, plant_id: str, specimens: list[Any], source: str,
+    platform: str = "", chat_id: str = "", user_id: str = "",
+) -> dict[str, Any]:
+    """Persist one confirmed left-to-right specimen roster in baseline.md."""
+    if source not in SPECIMEN_ORDER_SOURCES:
+        raise ValueError("source must be user_description or overview_photo")
+    if not isinstance(specimens, list) or not 1 <= len(specimens) <= MAX_NAMED_SPECIMENS:
+        raise ValueError("specimens must contain between 1 and 6 labels")
+
+    labels = [" ".join(_safe_text(value, max_chars=160).split()) for value in specimens]
+    if any(not label for label in labels):
+        raise ValueError("specimen labels must not be empty")
+
+    plant = resolve_plant(
+        plant_id=plant_id, platform=platform, chat_id=chat_id, user_id=user_id,
+        require_owner=bool(platform or chat_id or user_id),
+    )
+    names = [f"{label} {position}" for position, label in enumerate(labels, start=1)]
+    section = "\n".join([
+        SPECIMEN_ROSTER_HEADING,
+        "",
+        f"Источник порядка: {SPECIMEN_ORDER_SOURCES[source]}",
+        *[f"- {name}" for name in names],
+    ])
+    baseline_path = Path(plant["workspace_path"]) / "baseline.md"
+    if not baseline_path.is_file():
+        raise FileNotFoundError(f"Plant baseline is missing: {baseline_path}")
+    with locked(baseline_path.with_suffix(".lock")):
+        baseline = baseline_path.read_text(encoding="utf-8", errors="replace")
+        if _SPECIMEN_ROSTER_RE.search(baseline):
+            baseline = _SPECIMEN_ROSTER_RE.sub(section.rstrip() + "\n\n", baseline, count=1)
+        else:
+            baseline = baseline.rstrip() + "\n\n" + section.rstrip() + "\n"
+        baseline_path.write_text(baseline, encoding="utf-8")
+        _chmod_private(baseline_path, 0o600)
+    return {"plant": plant, "source": source, "specimens": names}
+
+
 def advance_onboarding(plant_id: str) -> dict[str, Any]:
     """Advance the one-shot name prompt after the next ordinary user turn."""
     def update(registry: dict[str, Any]) -> dict[str, Any]:
@@ -876,8 +924,14 @@ def activate_plant(
         workspace = Path(plant["workspace_path"])
         campaign_path = workspace / "campaign.md"
         baseline_path = workspace / "baseline.md"
+        existing_baseline = baseline_path.read_text(encoding="utf-8", errors="replace")
+        existing_roster = _SPECIMEN_ROSTER_RE.search(existing_baseline)
+        updated_baseline = baseline_markdown
+        if existing_roster:
+            updated_baseline = _SPECIMEN_ROSTER_RE.sub("", updated_baseline).rstrip()
+            updated_baseline += "\n\n" + existing_roster.group(0).strip()
         campaign_path.write_text(campaign_markdown.rstrip() + "\n", encoding="utf-8")
-        baseline_path.write_text(baseline_markdown.rstrip() + "\n", encoding="utf-8")
+        baseline_path.write_text(updated_baseline.rstrip() + "\n", encoding="utf-8")
         _chmod_private(campaign_path, 0o600)
         _chmod_private(baseline_path, 0o600)
         _replace_markdown_field(campaign_path, "Plant ID", plant_id)
