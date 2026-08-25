@@ -145,8 +145,10 @@ Team bundle:
 grow-helper-team/
 ├── profiles/<seven profiles>/
 ├── plugin/grow-helper-monitor/
-│   ├── hooks_and_tools.py
-│   ├── hermes_adapter.py
+│   ├── growhelper_monitor/
+│   │   ├── plugin.py
+│   │   ├── {runtime_context,gateway,permissions,commands,tools}.py
+│   │   └── {core,hermes_adapter,telegram_client,validation}.py
 │   └── dashboard/{manifest.json, plugin_api.py, dist/}
 ├── templates/
 │   ├── campaign.md
