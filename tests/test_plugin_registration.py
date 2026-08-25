@@ -4,6 +4,8 @@ import sys
 import unittest
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "plugin" / "grow-helper-monitor"
 if str(PLUGIN) not in sys.path:
@@ -32,19 +34,19 @@ class RegistrationTests(unittest.TestCase):
     def test_registers_expected_narrow_surface(self) -> None:
         ctx = FakeContext()
         register(ctx)
+        team = yaml.safe_load((ROOT / "team.yaml").read_text(encoding="utf-8"))
+        contract = team["plugin"]
         self.assertEqual(
             set(ctx.tools),
-            {
-                "growhelper_plants", "growhelper_start_cycle",
-                "growhelper_publish_reply", "growhelper_request_change",
-            },
+            set(contract["tools"]),
         )
-        self.assertEqual(
-            set(ctx.hooks),
-            {"pre_tool_call", "pre_gateway_dispatch", "pre_llm_call", "post_llm_call"},
+        self.assertEqual(set(ctx.hooks), set(contract["hooks"]))
+        self.assertEqual(set(ctx.commands), set(contract["commands"]))
+        self.assertTrue(all(tool["toolset"] == contract["toolset"] for tool in ctx.tools.values()))
+        self.assertTrue(
+            all(tool["schema"]["parameters"].get("additionalProperties") is False
+                for tool in ctx.tools.values())
         )
-        self.assertEqual(set(ctx.commands), {"addplant", "plant", "delplant"})
-        self.assertTrue(all(tool["toolset"] == "growhelper" for tool in ctx.tools.values()))
 
 
 if __name__ == "__main__":

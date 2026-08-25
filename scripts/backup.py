@@ -12,10 +12,9 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-PROFILES = (
-    "grow-helper", "vision-observation", "plant-state", "cultivation-advisor",
-    "task-followup", "data-curator", "reviewer",
-)
+from team_contract import PROFILE_TOOLSETS
+
+PROFILES = tuple(PROFILE_TOOLSETS)
 
 
 def sqlite_backup(source: Path, target: Path) -> None:

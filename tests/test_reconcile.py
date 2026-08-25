@@ -33,7 +33,8 @@ class ReconcileTests(unittest.TestCase):
                 core.append_activity(plant["plant_id"], {
                     "kind": "growhelper_reply", "cycle_id": "t_uncertain",
                     "phase": "final", "delivery": "uncertain", "text": "Итог",
-                    "message_id": "", "media": [], "error": "timeout",
+                    "session_id": "s_1", "message_id": "", "media": [],
+                    "error": "timeout",
                 })
             finally:
                 os.environ.clear()

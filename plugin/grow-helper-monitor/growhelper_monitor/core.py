@@ -35,6 +35,10 @@ SPECIMEN_ORDER_SOURCES = {
     "user_description": "описание пользователя",
     "overview_photo": "обзорная фотография, подтверждено пользователем",
 }
+ACTIVITY_REQUIRED_FIELDS = {
+    "timestamp", "plant_id", "kind", "cycle_id", "session_id",
+    "message_id", "text", "media", "delivery", "phase",
+}
 PLANT_ID_RE = re.compile(r"^plt_[a-f0-9]{8,32}$")
 BOARD_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 MEDIA_EXTENSIONS = {
@@ -962,6 +966,9 @@ def append_activity(plant_id: str, entry: dict[str, Any]) -> dict[str, Any]:
     value = dict(entry)
     value.setdefault("timestamp", now_iso())
     value["plant_id"] = plant_id
+    missing = sorted(ACTIVITY_REQUIRED_FIELDS - value.keys())
+    if missing:
+        raise ValueError(f"Activity entry is missing required fields: {', '.join(missing)}")
     if "text" in value:
         value["text"] = _safe_text(value["text"], max_chars=100_000)
     if "media" in value and not isinstance(value["media"], list):

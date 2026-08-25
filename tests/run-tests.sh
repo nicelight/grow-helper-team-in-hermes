@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PYTHON_BIN="${GROWHELPER_PYTHON:-python3}"
 cd "$ROOT"
-python3 -m compileall -q plugin scripts tests
-python3 -m unittest discover -s tests -p 'test_*.py' -v
+"$PYTHON_BIN" -m compileall -q plugin scripts tests
+"$PYTHON_BIN" -m unittest discover -s tests -p 'test_*.py' -v
 if command -v node >/dev/null 2>&1; then
   node --check plugin/grow-helper-monitor/dashboard/dist/index.js
 fi
-python3 - <<'PY'
+"$PYTHON_BIN" - <<'PY'
 import json
 from pathlib import Path
 import yaml

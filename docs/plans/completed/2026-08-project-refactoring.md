@@ -1,8 +1,15 @@
 # План рефакторинга GrowHelper
 
+Статус: выполнен в ветке `refactor/growhelper-maintainability`; production не
+изменялся. Итоговая проверка: 36 тестов.
+
 ## Вердикт
 
 Проекту нужен локальный рефакторинг без изменения архитектуры.
+
+План проверен 2026-08-25 по `docs/BRIEF_v2.md`, `spec/`, `team.yaml`,
+текущему коду и baseline из 33 тестов. Все пункты ниже относятся к текущему
+checkout; production deploy в эту ветку не входит.
 
 Сохраняем:
 
@@ -18,8 +25,8 @@ frameworks или абстракции без подтверждённой не�
 
 ## 1. Разделить `plugin.py`
 
-`plugin/grow-helper-monitor/growhelper_monitor/plugin.py` содержит около 1250
-строк и объединяет несколько независимо изменяемых обязанностей:
+До рефакторинга `plugin/grow-helper-monitor/growhelper_monitor/plugin.py`
+содержал 1435 строк и объединял несколько независимо изменяемых обязанностей:
 
 - состояние Telegram turn и session context;
 - gateway hooks;
@@ -87,7 +94,9 @@ directory без остаточных файлов. Допустимые вар�
 - частично `scripts/backup.py` и тестах.
 
 Installer и doctor должны получать имена Profiles, descriptions и toolsets из
-`team.yaml`. Backup должен получать оттуда хотя бы список Profiles.
+`team.yaml`. Backup должен получать оттуда список Profiles. Doctor также должен
+сверять зарегистрированные tools, hooks, commands и toolset с plugin-контрактом
+из `team.yaml`.
 
 Не создавать второй config-файл с теми же данными.
 
@@ -178,16 +187,14 @@ GROWHELPER_PYTHON=/usr/local/lib/hermes-agent/venv/bin/python \
 
 ## 8. Упорядочить agent-legible документы
 
-`todo.md` содержит старый план с незакрытыми checkbox, хотя большая часть
-работ уже реализована и развёрнута. Такой файл вводит нового агента в
-заблуждение.
+`todo.md` содержит старый план с незакрытыми checkbox, хотя работа реализована
+и развёрнута. В отдельных деталях он уже противоречит текущему контракту.
 
 Нужно:
 
-- отметить фактический статус пунктов;
-- перенести завершённый план в `docs/plans/completed/` или явно назвать его
-  архивным;
-- оставить в корне только актуальный backlog, если он действительно нужен.
+- заменить его короткой архивной записью о фактическом результате в
+  `docs/plans/completed/`;
+- удалить устаревший корневой backlog.
 
 `AGENTS.md` должен постепенно становиться картой source of truth и набором
 обязательных правил. Подробности, уже закреплённые в BRIEF, spec или RUNBOOK,
@@ -195,7 +202,7 @@ GROWHELPER_PYTHON=/usr/local/lib/hermes-agent/venv/bin/python \
 
 ## 9. Минимально усилить тестовую опору
 
-Текущий regression suite проходит 30 тестов. Расширять его большой матрицей не
+Текущий regression suite проходит 33 теста. Расширять его большой матрицей не
 нужно.
 
 Перед рефакторингом достаточно добавить focused tests для:
@@ -257,8 +264,11 @@ code-native Dashboard соответствует KISS.
 6. Добавить только перечисленные characterization tests.
 7. Разделить `plugin.py`, не меняя observable behavior.
 8. Запустить полный regression suite.
-9. Выполнить deploy через `install-team.py`.
-10. Проверить doctor, сервисы, Dashboard smoke test и ручной Telegram E2E.
+9. Проверить diff, зафиксировать результат в отдельной Git-ветке и push.
+
+Production deploy, рестарты сервисов, doctor на сервере, Dashboard smoke test и
+ручной Telegram E2E выполняются только после review/merge отдельным release-
+шагом. Эта ветка production не меняет.
 
 Каждый этап должен быть отдельным проверяемым изменением. Не объединять
 структурный рефакторинг с новым пользовательским функционалом.
@@ -271,5 +281,5 @@ code-native Dashboard соответствует KISS.
 - `team.yaml`, SDD и runtime не расходятся;
 - test runner одинаково работает локально и через Hermes Python;
 - committed repository не содержит устаревший release manifest;
-- текущие 30 regression tests и новые focused tests проходят;
+- текущие 33 regression tests и новые focused tests проходят;
 - observable Telegram, Kanban, Dashboard и Plant storage behavior не изменён.
