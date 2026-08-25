@@ -381,9 +381,10 @@ def _handle_start_cycle(params: dict[str, Any], **kwargs: Any) -> str:
         state.operator_logged = True
         _TURN.set(state)
         acknowledgement = (
-            "Команда узкопрофильных специалистов уже разбирает ситуацию с Plant "
-            f"«{plant.get('nickname') or plant['plant_id']}» и ищет оптимальное решение. "
-            "Скоро вернусь с рекомендациями 🌱"
+            "Проведу консилиум со специалистами по Plant "
+            f"«{plant.get('nickname') or plant['plant_id']}» и вернусь с результатом. "
+            "Рекомендую дождаться моего ответа и пока не отправлять новые сообщения — "
+            "так новые данные не смешаются с текущим разбором."
         )
         return _json({
             "ok": True,

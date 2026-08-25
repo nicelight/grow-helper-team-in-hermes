@@ -53,8 +53,9 @@ class PluginTests(unittest.TestCase):
         self.assertTrue(second["duplicate"])
         self.assertEqual(
             first["acknowledgement"],
-            "Команда узкопрофильных специалистов уже разбирает ситуацию с Plant "
-            "«Милок» и ищет оптимальное решение. Скоро вернусь с рекомендациями 🌱",
+            "Проведу консилиум со специалистами по Plant «Милок» и вернусь с результатом. "
+            "Рекомендую дождаться моего ответа и пока не отправлять новые сообщения — "
+            "так новые данные не смешаются с текущим разбором.",
         )
         self.assertNotIn("acknowledgement", second)
         create.assert_called_once()
