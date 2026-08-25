@@ -215,16 +215,14 @@ GrowHelper production:
 - Hermes root: `/home/growhelper/.hermes`
 - Plant data: `/home/growhelper/grow-helper`
 - shared Hermes runtime: `/usr/local/lib/hermes-agent`
-Preferred SSH alias:
-```text
-growhelper-prod
-```
-Expected connection:
+Autonomous production SSH:
 ```bash
-ssh growhelper-prod
+ssh -o BatchMode=yes growhelper-prod
 ```
-For autonomous Codex CLI work, SSH should use key-based authentication without a password prompt.
-If the alias or SSH key is missing, do not invent credentials. Tell the operator what setup is missing.
+The local alias targets `growhelper@108.181.252.78` with the dedicated
+passphrase-free key `~/.ssh/growhelper_prod_ed25519`. Do not use root or a
+password for normal development and deploy. If BatchMode fails, report the
+missing alias/key instead of inventing credentials.
 
 ## Server-side development
 A server Git checkout is a normal development workspace.

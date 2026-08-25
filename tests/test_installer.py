@@ -5,6 +5,7 @@ import importlib.util
 import io
 import os
 import stat
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,6 +15,9 @@ from contextlib import redirect_stdout
 import yaml
 
 REPO = Path(__file__).resolve().parents[1]
+SCRIPTS = REPO / "scripts"
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
 
 
 class InstallerTests(unittest.TestCase):
@@ -66,6 +70,8 @@ raise SystemExit(2)
             try:
                 with patch.object(Path, "home", return_value=home), redirect_stdout(io.StringIO()):
                     module.Installer(args).install()
+                    stale = home / ".hermes" / "plugins" / "grow-helper-monitor" / "stale.py"
+                    stale.write_text("obsolete\n", encoding="utf-8")
                     module.Installer(args).install()  # second run must preserve state
             finally:
                 os.environ.clear()
@@ -98,6 +104,7 @@ raise SystemExit(2)
                     self.assertIn("MODEL_KEY=keep", env)
 
             self.assertTrue((home / ".hermes" / "plugins" / "grow-helper-monitor" / "dashboard" / "manifest.json").is_file())
+            self.assertFalse((home / ".hermes" / "plugins" / "grow-helper-monitor" / "stale.py").exists())
             self.assertTrue((home / "grow-helper" / "plants" / "index.json").is_file())
 
 

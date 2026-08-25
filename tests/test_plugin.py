@@ -17,7 +17,7 @@ if str(PLUGIN) not in sys.path:
     sys.path.insert(0, str(PLUGIN))
 
 from growhelper_monitor import core
-from growhelper_monitor import plugin
+from growhelper_monitor import commands, gateway, hermes_adapter, permissions, runtime_context, tools
 from growhelper_monitor import telegram_client
 
 
@@ -31,23 +31,23 @@ class PluginTests(unittest.TestCase):
             nickname="Милок", owner_platform="telegram", owner_chat_id="100",
             owner_user_id="100", board_creator=lambda **kwargs: None,
         )
-        self.state = plugin.TurnState(
+        self.state = runtime_context.TurnState(
             platform="telegram", session_id="s1", turn_id="turn1", user_id="100",
             chat_id="100", message_id="77", user_message="EC 1.8, pH 6.4",
         )
-        plugin._TURN.set(self.state)
+        runtime_context._TURN.set(self.state)
 
     def tearDown(self) -> None:
-        plugin._TURN.set(None)
-        plugin._INBOUND.set(None)
+        runtime_context._TURN.set(None)
+        runtime_context._INBOUND.set(None)
         os.environ.clear()
         os.environ.update(self.old_env)
         self.tmp.cleanup()
 
     def test_cycle_creation_is_idempotent_by_message(self) -> None:
-        with patch.object(plugin.hermes, "create_cycle_task", return_value="t_cycle") as create:
-            first = json.loads(plugin._handle_start_cycle({"event_type": "measurement"}))
-            second = json.loads(plugin._handle_start_cycle({"event_type": "measurement"}))
+        with patch.object(hermes_adapter, "create_cycle_task", return_value="t_cycle") as create:
+            first = json.loads(tools._handle_start_cycle({"event_type": "measurement"}))
+            second = json.loads(tools._handle_start_cycle({"event_type": "measurement"}))
         self.assertTrue(first["ok"])
         self.assertTrue(second["duplicate"])
         self.assertEqual(
@@ -60,9 +60,9 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(core.get_plant(self.plant["plant_id"])["active_cycle_id"], "t_cycle")
 
     def test_media_forces_photo_route(self) -> None:
-        with patch.object(plugin.core, "copy_media", return_value=["photos/2026-08-20/leaf.jpg"]), \
-             patch.object(plugin.hermes, "create_cycle_task", return_value="t_photo") as create:
-            result = json.loads(plugin._handle_start_cycle({"event_type": "measurement"}))
+        with patch.object(core, "copy_media", return_value=["photos/2026-08-20/leaf.jpg"]), \
+             patch.object(hermes_adapter, "create_cycle_task", return_value="t_photo") as create:
+            result = json.loads(tools._handle_start_cycle({"event_type": "measurement"}))
         self.assertTrue(result["ok"])
         body = create.call_args.kwargs["body"]
         self.assertIn('"event_type": "photo"', body)
@@ -73,14 +73,14 @@ class PluginTests(unittest.TestCase):
         core.set_pending_addplant(
             platform="telegram", chat_id="100", user_id="100", command_message_id="70",
         )
-        inbound = plugin.TurnState(
+        inbound = runtime_context.TurnState(
             platform="telegram", user_id="100", chat_id="100", message_id="71",
             user_message="Фото для аватарки", media_paths=[str(source)],
         )
-        plugin._INBOUND.set(inbound)
-        with patch.object(plugin.hermes, "create_board", return_value={}) as create_board, \
-             patch.object(plugin.telegram, "send_text", return_value={"message_id": "501"}):
-            self.assertIsNone(plugin._handle_addplant_sync("__avatar__"))
+        runtime_context._INBOUND.set(inbound)
+        with patch.object(hermes_adapter, "create_board", return_value={}) as create_board, \
+             patch.object(telegram_client, "send_text", return_value={"message_id": "501"}):
+            self.assertIsNone(commands._handle_addplant_sync("__avatar__"))
 
         created = core.resolve_plant(platform="telegram", chat_id="100", user_id="100")
         self.assertNotEqual(created["plant_id"], self.plant["plant_id"])
@@ -91,11 +91,11 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(avatar.name, "avatar.jpg")
         create_board.assert_called_once()
 
-        plugin._INBOUND.set(plugin.TurnState(
+        runtime_context._INBOUND.set(runtime_context.TurnState(
             platform="telegram", user_id="100", chat_id="100", message_id="72",
             user_message="Зелёный угол",
         ))
-        context = plugin._pre_llm_call(
+        context = gateway._pre_llm_call(
             platform="telegram", sender_id="100", user_message="Зелёный угол",
             session_id="s1", turn_id="name-turn",
         )
@@ -104,9 +104,9 @@ class PluginTests(unittest.TestCase):
             core.get_plant(created["plant_id"])["onboarding_stage"],
             "collecting_campaign",
         )
-        renamed = json.loads(plugin._handle_plants({"action": "rename", "nickname": "Зелёный угол"}))
+        renamed = json.loads(tools._handle_plants({"action": "rename", "nickname": "Зелёный угол"}))
         self.assertTrue(renamed["ok"])
-        activated = json.loads(plugin._handle_plants({
+        activated = json.loads(tools._handle_plants({
             "action": "activate", "confirmed": True,
             "campaign_markdown": "# Campaign\nPlant ID: pending\nNickname: pending\nStatus: onboarding",
             "baseline_markdown": "# Baseline\nPlant ID: pending\nStatus: partial",
@@ -129,10 +129,10 @@ class PluginTests(unittest.TestCase):
             source=source_info, user_id="100", message_id="80",
             text="🌱 Окно", media_urls=[],
         )
-        decision = plugin._pre_gateway_dispatch(event=event)
+        decision = gateway._pre_gateway_dispatch(event=event)
         self.assertEqual(decision, {"action": "rewrite", "text": f"/plant {second['plant_id']}"})
-        with patch.object(plugin.telegram, "send_photo", return_value={"message_id": "502"}) as send:
-            self.assertIsNone(plugin._handle_plant_sync(second["plant_id"]))
+        with patch.object(telegram_client, "send_photo", return_value={"message_id": "502"}) as send:
+            self.assertIsNone(commands._handle_plant_sync(second["plant_id"]))
         active = core.resolve_plant(platform="telegram", chat_id="100", user_id="100")
         self.assertEqual(active["plant_id"], second["plant_id"])
         send.assert_called_once()
@@ -142,12 +142,12 @@ class PluginTests(unittest.TestCase):
             nickname="Чужой", owner_platform="telegram", owner_chat_id="200",
             owner_user_id="200", board_creator=lambda **kwargs: None,
         )
-        plugin._INBOUND.set(plugin.TurnState(
+        runtime_context._INBOUND.set(runtime_context.TurnState(
             platform="telegram", user_id="100", chat_id="100", message_id="81",
             user_message="/delplant",
         ))
-        with patch.object(plugin.telegram, "send_text", return_value={"message_id": "504"}) as send:
-            self.assertIsNone(plugin._handle_delplant_sync(""))
+        with patch.object(telegram_client, "send_text", return_value={"message_id": "504"}) as send:
+            self.assertIsNone(commands._handle_delplant_sync(""))
         keyboard = send.call_args.kwargs["reply_keyboard"]
         self.assertEqual(keyboard, [["Удалить 🌱 Милок"]])
 
@@ -160,56 +160,56 @@ class PluginTests(unittest.TestCase):
             text="Удалить 🌱 Милок", media_urls=[],
         )
         self.assertEqual(
-            plugin._pre_gateway_dispatch(event=selected),
+            gateway._pre_gateway_dispatch(event=selected),
             {"action": "rewrite", "text": f"/delplant {self.plant['plant_id']}"},
         )
-        with patch.object(plugin.telegram, "send_text", return_value={"message_id": "505"}):
-            self.assertIsNone(plugin._handle_delplant_sync(self.plant["plant_id"]))
+        with patch.object(telegram_client, "send_text", return_value={"message_id": "505"}):
+            self.assertIsNone(commands._handle_delplant_sync(self.plant["plant_id"]))
         self.assertIsNotNone(core.get_plant(self.plant["plant_id"]))
 
         cancelled = SimpleNamespace(
             source=source, user_id="100", message_id="83",
-            text=plugin.DELPLANT_CANCEL_BUTTON, media_urls=[],
+            text=commands.DELPLANT_CANCEL_BUTTON, media_urls=[],
         )
         self.assertEqual(
-            plugin._pre_gateway_dispatch(event=cancelled),
+            gateway._pre_gateway_dispatch(event=cancelled),
             {"action": "rewrite", "text": "/delplant __cancel__"},
         )
-        with patch.object(plugin.telegram, "send_text", return_value={"message_id": "506"}):
-            self.assertIsNone(plugin._handle_delplant_sync("__cancel__"))
+        with patch.object(telegram_client, "send_text", return_value={"message_id": "506"}):
+            self.assertIsNone(commands._handle_delplant_sync("__cancel__"))
         self.assertIsNotNone(core.get_plant(self.plant["plant_id"]))
 
-        plugin._INBOUND.set(plugin.TurnState(
+        runtime_context._INBOUND.set(runtime_context.TurnState(
             platform="telegram", user_id="100", chat_id="100", message_id="84",
             user_message="Удалить 🌱 Милок",
         ))
-        with patch.object(plugin.telegram, "send_text", return_value={"message_id": "507"}):
-            self.assertIsNone(plugin._handle_delplant_sync(self.plant["plant_id"]))
+        with patch.object(telegram_client, "send_text", return_value={"message_id": "507"}):
+            self.assertIsNone(commands._handle_delplant_sync(self.plant["plant_id"]))
         confirmed = SimpleNamespace(
             source=source, user_id="100", message_id="85",
-            text=plugin.DELPLANT_CONFIRM_BUTTON, media_urls=[],
+            text=commands.DELPLANT_CONFIRM_BUTTON, media_urls=[],
         )
         self.assertEqual(
-            plugin._pre_gateway_dispatch(event=confirmed),
+            gateway._pre_gateway_dispatch(event=confirmed),
             {"action": "rewrite", "text": "/delplant __confirm__"},
         )
         workspace = Path(self.plant["workspace_path"])
-        with patch.object(plugin.hermes, "delete_board", return_value={}) as delete_board, \
-             patch.object(plugin.telegram, "send_text", return_value={"message_id": "508"}):
-            self.assertIsNone(plugin._handle_delplant_sync("__confirm__"))
+        with patch.object(hermes_adapter, "delete_board", return_value={}) as delete_board, \
+             patch.object(telegram_client, "send_text", return_value={"message_id": "508"}):
+            self.assertIsNone(commands._handle_delplant_sync("__confirm__"))
         delete_board.assert_called_once_with(self.plant["board_slug"])
         self.assertIsNone(core.get_plant(self.plant["plant_id"]))
         self.assertFalse(workspace.exists())
 
     def test_change_request_uses_first_configured_owner(self) -> None:
         os.environ["GROWHELPER_TELEGRAM_ADMIN_USERS"] = "900,901"
-        with patch.object(plugin.telegram, "send_text", return_value={"message_id": "503"}) as send:
-            result = json.loads(plugin._handle_request_change({"text": "Добавьте новый отчёт"}))
+        with patch.object(telegram_client, "send_text", return_value={"message_id": "503"}) as send:
+            result = json.loads(tools._handle_request_change({"text": "Добавьте новый отчёт"}))
         self.assertTrue(result["ok"])
         self.assertEqual(send.call_args.kwargs["chat_id"], "900")
 
     def test_confirmed_specimen_roster_is_written_to_baseline(self) -> None:
-        unconfirmed = json.loads(plugin._handle_plants({
+        unconfirmed = json.loads(tools._handle_plants({
             "action": "set_specimens",
             "specimens": ["Ромашка"],
             "source": "user_description",
@@ -217,7 +217,7 @@ class PluginTests(unittest.TestCase):
         }))
         self.assertFalse(unconfirmed["ok"])
 
-        result = json.loads(plugin._handle_plants({
+        result = json.loads(tools._handle_plants({
             "action": "set_specimens",
             "specimens": ["Красная петуния в грунте", "Неизвестная растишка"],
             "source": "user_description",
@@ -237,8 +237,8 @@ class PluginTests(unittest.TestCase):
         baseline = (Path(self.plant["workspace_path"]) / "baseline.md").read_text(encoding="utf-8")
         self.assertIn("- Неизвестная растишка 2", baseline)
 
-        with patch.object(plugin.log, "exception"):
-            rejected = json.loads(plugin._handle_plants({
+        with patch.object(tools.log, "exception"):
+            rejected = json.loads(tools._handle_plants({
                 "action": "set_specimens",
                 "specimens": [f"Растишка {index}" for index in range(7)],
                 "source": "user_description",
@@ -248,9 +248,9 @@ class PluginTests(unittest.TestCase):
 
     def test_done_unpublished_cycle_queues_new_event_for_recovery(self) -> None:
         core.set_active_cycle(self.plant["plant_id"], "t_stale")
-        with patch.object(plugin.hermes, "cycle_snapshot", return_value={"status": "done"}), \
-             patch.object(plugin.hermes, "create_cycle_task") as create:
-            result = json.loads(plugin._handle_start_cycle({"event_type": "measurement"}))
+        with patch.object(hermes_adapter, "cycle_snapshot", return_value={"status": "done"}), \
+             patch.object(hermes_adapter, "create_cycle_task") as create:
+            result = json.loads(tools._handle_start_cycle({"event_type": "measurement"}))
         self.assertEqual(result["error"], "active_cycle_needs_recovery")
         self.assertTrue(result["queued"])
         create.assert_not_called()
@@ -265,12 +265,12 @@ class PluginTests(unittest.TestCase):
         os.environ["HERMES_KANBAN_TASK"] = "t_final"
         os.environ["HERMES_KANBAN_BOARD"] = self.plant["board_slug"]
         snapshot = {"nodes": [{"id": "t_final", "body": "GROWHELPER_FINAL_V1"}]}
-        with patch.object(plugin.hermes, "cycle_snapshot", return_value=snapshot), \
-             patch.object(plugin.telegram, "send_text", return_value={"message_id": "501"}) as send:
-            first = json.loads(plugin._handle_publish_reply({
+        with patch.object(hermes_adapter, "cycle_snapshot", return_value=snapshot), \
+             patch.object(telegram_client, "send_text", return_value={"message_id": "501"}) as send:
+            first = json.loads(tools._handle_publish_reply({
                 "plant_id": self.plant["plant_id"], "cycle_id": "t_cycle", "text": "Итог",
             }))
-            second = json.loads(plugin._handle_publish_reply({
+            second = json.loads(tools._handle_publish_reply({
                 "plant_id": self.plant["plant_id"], "cycle_id": "t_cycle", "text": "Итог",
             }))
         self.assertTrue(first["ok"])
@@ -284,12 +284,12 @@ class PluginTests(unittest.TestCase):
         os.environ["HERMES_KANBAN_TASK"] = "t_final"
         os.environ["HERMES_KANBAN_BOARD"] = self.plant["board_slug"]
         snapshot = {"nodes": [{"id": "t_final", "body": "GROWHELPER_FINAL_V1"}]}
-        with patch.object(plugin.hermes, "cycle_snapshot", return_value=snapshot), \
-             patch.object(plugin.telegram, "send_text", side_effect=error) as send:
-            first = json.loads(plugin._handle_publish_reply({
+        with patch.object(hermes_adapter, "cycle_snapshot", return_value=snapshot), \
+             patch.object(telegram_client, "send_text", side_effect=error) as send:
+            first = json.loads(tools._handle_publish_reply({
                 "plant_id": self.plant["plant_id"], "cycle_id": "t_uncertain", "text": "Итог",
             }))
-            second = json.loads(plugin._handle_publish_reply({
+            second = json.loads(tools._handle_publish_reply({
                 "plant_id": self.plant["plant_id"], "cycle_id": "t_uncertain", "text": "Итог",
             }))
         self.assertEqual(first["error"], "delivery_uncertain")
@@ -303,7 +303,7 @@ class PluginTests(unittest.TestCase):
         os.environ["HERMES_KANBAN_TASK"] = "t_final"
         os.environ["HERMES_KANBAN_BOARD"] = "another-board"
         try:
-            result = json.loads(plugin._handle_publish_reply({
+            result = json.loads(tools._handle_publish_reply({
                 "plant_id": self.plant["plant_id"], "cycle_id": "t_cycle", "text": "Итог",
             }))
         finally:
@@ -314,7 +314,7 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(result["error"], "cross_board_publication_refused")
 
     def test_publish_requires_final_dispatcher_task(self) -> None:
-        public = json.loads(plugin._handle_publish_reply({
+        public = json.loads(tools._handle_publish_reply({
             "plant_id": self.plant["plant_id"], "cycle_id": "t_cycle", "text": "Итог",
         }))
         self.assertEqual(public["error"], "publication_requires_dispatcher_owned_growhelper_worker")
@@ -323,22 +323,22 @@ class PluginTests(unittest.TestCase):
         os.environ["HERMES_KANBAN_TASK"] = "t_root"
         os.environ["HERMES_KANBAN_BOARD"] = self.plant["board_slug"]
         with patch.object(
-            plugin.hermes,
+            hermes_adapter,
             "cycle_snapshot",
             return_value={"nodes": [{"id": "t_root", "body": "GrowHelper Cycle root"}]},
         ):
-            root = json.loads(plugin._handle_publish_reply({
+            root = json.loads(tools._handle_publish_reply({
                 "plant_id": self.plant["plant_id"], "cycle_id": "t_root", "text": "Итог",
             }))
         self.assertEqual(root["error"], "publication_requires_final_task_marker")
 
 
     def test_post_hook_ignores_internal_kanban_worker(self) -> None:
-        plugin._TURN.set(plugin.TurnState(
+        runtime_context._TURN.set(runtime_context.TurnState(
             platform="kanban", session_id="worker-session", user_message="internal",
             plant_id=self.plant["plant_id"], cycle_id="t_cycle",
         ))
-        plugin._post_llm_call(assistant_response="internal worker result")
+        gateway._post_llm_call(assistant_response="internal worker result")
         self.assertEqual(core.read_activity(self.plant["plant_id"]), [])
 
     def test_filesystem_guard_enforces_role_ownership(self) -> None:
@@ -350,19 +350,19 @@ class PluginTests(unittest.TestCase):
         os.environ["HERMES_KANBAN_TASK"] = "t_guard"
         try:
             os.environ["HERMES_PROFILE"] = "plant-state"
-            blocked = plugin._pre_tool_call("write_file", {"path": "current-state.md"})
+            blocked = permissions._pre_tool_call("write_file", {"path": "current-state.md"})
             self.assertEqual(blocked["action"], "block")
 
             os.environ["HERMES_PROFILE"] = "data-curator"
-            self.assertIsNone(plugin._pre_tool_call("write_file", {"path": "dataset/index.jsonl"}))
-            blocked = plugin._pre_tool_call("write_file", {"path": "current-state.md"})
+            self.assertIsNone(permissions._pre_tool_call("write_file", {"path": "dataset/index.jsonl"}))
+            blocked = permissions._pre_tool_call("write_file", {"path": "current-state.md"})
             self.assertEqual(blocked["action"], "block")
 
             os.environ["HERMES_PROFILE"] = "grow-helper"
-            self.assertIsNone(plugin._pre_tool_call("write_file", {"path": "current-state.md"}))
-            blocked = plugin._pre_tool_call("write_file", {"path": "dataset/index.jsonl"})
+            self.assertIsNone(permissions._pre_tool_call("write_file", {"path": "current-state.md"}))
+            blocked = permissions._pre_tool_call("write_file", {"path": "dataset/index.jsonl"})
             self.assertEqual(blocked["action"], "block")
-            blocked = plugin._pre_tool_call("read_file", {"path": "../other-plant/secret.md"})
+            blocked = permissions._pre_tool_call("read_file", {"path": "../other-plant/secret.md"})
             self.assertEqual(blocked["action"], "block")
         finally:
             os.chdir(old_cwd)
@@ -379,21 +379,21 @@ class PluginTests(unittest.TestCase):
         os.environ["HERMES_PROFILE"] = "grow-helper"
         os.environ.pop("HERMES_KANBAN_TASK", None)
         self.assertEqual(
-            plugin._pre_tool_call("growhelper_publish_reply", {})["action"],
+            permissions._pre_tool_call("growhelper_publish_reply", {})["action"],
             "block",
         )
-        self.assertEqual(plugin._pre_tool_call("kanban_create", {})["action"], "block")
+        self.assertEqual(permissions._pre_tool_call("kanban_create", {})["action"], "block")
 
         os.environ["HERMES_PROFILE"] = "plant-state"
         os.environ["HERMES_KANBAN_TASK"] = "t_state"
-        self.assertEqual(plugin._pre_tool_call("kanban_create", {})["action"], "block")
-        self.assertEqual(plugin._pre_tool_call("kanban_link", {})["action"], "block")
-        self.assertIsNone(plugin._pre_tool_call("kanban_complete", {}))
+        self.assertEqual(permissions._pre_tool_call("kanban_create", {})["action"], "block")
+        self.assertEqual(permissions._pre_tool_call("kanban_link", {})["action"], "block")
+        self.assertIsNone(permissions._pre_tool_call("kanban_complete", {}))
 
     def test_cycle_start_is_gateway_only(self) -> None:
         os.environ["HERMES_PROFILE"] = "grow-helper"
         os.environ["HERMES_KANBAN_TASK"] = "t_worker"
-        result = json.loads(plugin._handle_start_cycle({"event_type": "measurement"}))
+        result = json.loads(tools._handle_start_cycle({"event_type": "measurement"}))
         self.assertIn("gateway-only", result["error"])
 
 

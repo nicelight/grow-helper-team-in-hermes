@@ -26,24 +26,8 @@ except ImportError as exc:
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BUNDLE_VERSION = (REPO_ROOT / "VERSION").read_text(encoding="utf-8").strip()
-PROFILES = {
-    "grow-helper": "Coordinates Plant campaigns, creates minimal Kanban workflows and publishes the final reply.",
-    "vision-observation": "Reports observable visual evidence without diagnoses.",
-    "plant-state": "Normalizes Plant condition, changes and non-causal trends.",
-    "cultivation-advisor": "Produces agronomic hypotheses and reversible recommendations.",
-    "task-followup": "Turns conclusions into checks, measurements and deadlines.",
-    "data-curator": "Maintains candidate and validated reusable evidence.",
-    "reviewer": "Independently checks contradictions and risky conclusions.",
-}
-PROFILE_TOOLSETS = {
-    "grow-helper": ["file", "web", "clarify", "kanban", "growhelper"],
-    "vision-observation": ["file", "vision", "delegation"],
-    "plant-state": ["file", "web", "delegation"],
-    "cultivation-advisor": ["file", "web", "delegation"],
-    "task-followup": ["file"],
-    "data-curator": ["file"],
-    "reviewer": ["file", "web", "delegation"],
-}
+from team_contract import PROFILE_DESCRIPTIONS as PROFILES  # noqa: E402
+from team_contract import PROFILE_TOOLSETS  # noqa: E402
 MESSAGING_SECRET_PREFIXES = (
     "TELEGRAM_", "DISCORD_", "SLACK_", "WHATSAPP_", "SIGNAL_", "MATRIX_",
     "FEISHU_", "DINGTALK_", "WECOM_", "WEIXIN_", "QQ_",
@@ -315,14 +299,19 @@ class Installer:
 
     def copy_plugin(self, destination: Path) -> None:
         source = REPO_ROOT / "plugin" / "grow-helper-monitor"
+        if destination.name != source.name:
+            raise ValueError(f"Refusing to synchronize unexpected plugin path: {destination}")
         print(f"= plugin -> {destination}")
         if self.args.dry_run:
             return
         destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.is_symlink() or destination.is_file():
+            destination.unlink()
+        elif destination.exists():
+            shutil.rmtree(destination)
         shutil.copytree(
             source,
             destination,
-            dirs_exist_ok=True,
             ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".pytest_cache"),
         )
 

@@ -86,15 +86,26 @@ class CoreTests(unittest.TestCase):
         plant, _ = self.create()
         core.append_activity(plant["plant_id"], {
             "kind": "operator_message", "cycle_id": "t_1", "message_id": "42",
-            "text": "EC 1.8", "media": [], "delivery": "received",
+            "session_id": "s_1", "text": "EC 1.8", "media": [],
+            "delivery": "received", "phase": "cycle_input",
         })
         core.append_activity(plant["plant_id"], {
             "kind": "growhelper_reply", "cycle_id": "t_1", "message_id": "43",
-            "text": "Принято", "media": [], "delivery": "sent", "phase": "final",
+            "session_id": "s_1", "text": "Принято", "media": [],
+            "delivery": "sent", "phase": "final",
         })
         self.assertEqual(len(core.read_activity(plant["plant_id"])), 2)
         found = core.find_activity(plant["plant_id"], kind="growhelper_reply", cycle_id="t_1")
         self.assertEqual(found["text"], "Принято")
+
+    def test_activity_rejects_missing_required_fields(self) -> None:
+        plant, _ = self.create()
+        with self.assertRaisesRegex(ValueError, "session_id"):
+            core.append_activity(plant["plant_id"], {
+                "kind": "operator_message", "cycle_id": None, "message_id": "42",
+                "text": "EC 1.8", "media": [], "delivery": "received", "phase": "direct",
+            })
+        self.assertEqual(core.read_activity(plant["plant_id"]), [])
 
     def test_corrupt_registry_fails_closed(self) -> None:
         core.ensure_layout()

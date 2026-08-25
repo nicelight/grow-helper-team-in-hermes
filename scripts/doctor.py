@@ -12,26 +12,15 @@ import sys
 from pathlib import Path
 from typing import Any
 
-try:
-    import yaml
-except ImportError:
-    yaml = None  # type: ignore[assignment]
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_SOURCE = REPO_ROOT / "plugin" / "grow-helper-monitor"
 sys.path.insert(0, str(PLUGIN_SOURCE))
 from growhelper_monitor import core  # noqa: E402
 from growhelper_monitor import hermes_adapter  # noqa: E402
+from team_contract import PLUGIN, PROFILE_TOOLSETS, plugin_names  # noqa: E402
 
-PROFILE_TOOLSETS = {
-    "grow-helper": ["file", "web", "clarify", "kanban", "growhelper"],
-    "vision-observation": ["file", "vision", "delegation"],
-    "plant-state": ["file", "web", "delegation"],
-    "cultivation-advisor": ["file", "web", "delegation"],
-    "task-followup": ["file"],
-    "data-curator": ["file"],
-    "reviewer": ["file", "web", "delegation"],
-}
 PROFILES = tuple(PROFILE_TOOLSETS)
 MESSAGING_PREFIXES = (
     "TELEGRAM_", "DISCORD_", "SLACK_", "WHATSAPP_", "SIGNAL_", "MATRIX_",
@@ -70,7 +59,7 @@ def run(command: list[str]) -> subprocess.CompletedProcess[str]:
 
 
 def read_yaml(path: Path) -> dict[str, Any]:
-    if yaml is None or not path.is_file():
+    if not path.is_file():
         return {}
     value = yaml.safe_load(path.read_text(encoding="utf-8"))
     return value if isinstance(value, dict) else {}
@@ -100,12 +89,12 @@ def load_growhelper_env_defaults(path: Path) -> dict[str, str]:
 def check_registration(report: Report) -> None:
     class FakeContext:
         def __init__(self) -> None:
-            self.tools: list[str] = []
+            self.tools: dict[str, str] = {}
             self.hooks: list[str] = []
             self.commands: list[str] = []
 
         def register_tool(self, **kwargs: Any) -> None:
-            self.tools.append(str(kwargs.get("name") or ""))
+            self.tools[str(kwargs.get("name") or "")] = str(kwargs.get("toolset") or "")
 
         def register_hook(self, name: str, callback: Any) -> None:
             del callback
@@ -119,21 +108,19 @@ def check_registration(report: Report) -> None:
         import growhelper_monitor
         ctx = FakeContext()
         growhelper_monitor.register(ctx)
-        expected_tools = {
-            "growhelper_plants", "growhelper_start_cycle",
-            "growhelper_publish_reply", "growhelper_request_change",
-        }
-        expected_hooks = {
-            "pre_tool_call", "pre_gateway_dispatch", "pre_llm_call", "post_llm_call",
-        }
+        expected_tools = set(plugin_names("tools"))
+        expected_hooks = set(plugin_names("hooks"))
+        expected_commands = set(plugin_names("commands"))
+        expected_toolset = str(PLUGIN.get("toolset") or "")
         if (
-            expected_tools.issubset(set(ctx.tools))
-            and expected_hooks.issubset(set(ctx.hooks))
-            and set(ctx.commands) == {"addplant", "plant", "delplant"}
+            set(ctx.tools) == expected_tools
+            and all(toolset == expected_toolset for toolset in ctx.tools.values())
+            and set(ctx.hooks) == expected_hooks
+            and set(ctx.commands) == expected_commands
         ):
             report.ok(
                 "plugin registration",
-                f"tools={ctx.tools}; hooks={ctx.hooks}; commands={ctx.commands}",
+                f"tools={list(ctx.tools)}; hooks={ctx.hooks}; commands={ctx.commands}",
             )
         else:
             report.error(
@@ -150,10 +137,6 @@ def check_profile_config(report: Report, hermes_root: Path, profile: str) -> Non
     if not path.is_file():
         report.error(f"config:{profile}", f"missing {path}")
         return
-    if yaml is None:
-        report.warn(f"config:{profile}", "PyYAML unavailable; semantic checks skipped")
-        return
-
     actual = config.get("toolsets") or []
     expected = PROFILE_TOOLSETS[profile]
     if actual == expected:
