@@ -211,6 +211,11 @@ class Installer:
         memory["user_profile_enabled"] = False
 
         if name == "grow-helper":
+            skills = config.setdefault("skills", {})
+            if not isinstance(skills, dict):
+                skills = {}
+                config["skills"] = skills
+            skills["creation_nudge_interval"] = 100
             self.enable_plugin(config)
             kanban = config.setdefault("kanban", {})
             if not isinstance(kanban, dict):

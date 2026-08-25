@@ -87,6 +87,7 @@ raise SystemExit(2)
                 self.assertTrue((profile_home / "plugins" / "grow-helper-monitor" / "plugin.yaml").is_file())
                 env = (profile_home / ".env").read_text(encoding="utf-8")
                 if profile == "grow-helper":
+                    self.assertEqual(config["skills"]["creation_nudge_interval"], 100)
                     self.assertIn("TELEGRAM_BOT_TOKEN=fake", env)
                     self.assertIn("GROWHELPER_DATA_ROOT=", env)
                     self.assertIn("GROWHELPER_TELEGRAM_ADMIN_USERS=100,200", env)
